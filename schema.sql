@@ -1,4 +1,10 @@
--- Включаем векторное расширение (если еще не включено)
+-- Сначала удалим старое, если есть (для чистоты эксперимента)
+DROP TABLE IF EXISTS interactions;
+DROP TABLE IF EXISTS contacts;
+DROP TABLE IF EXISTS users;
+DROP FUNCTION IF EXISTS match_contacts;
+
+-- Включаем векторное расширение
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Таблица users (Пользователи)
@@ -20,7 +26,6 @@ CREATE TABLE contacts (
   summary TEXT,
   raw_text TEXT,
   meta JSONB DEFAULT '{}'::jsonb,
-  -- ВНИМАНИЕ: Размер вектора должен соответствовать модели в .env
   -- text-embedding-3-small = 1536
   embedding vector(1536),  
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -40,28 +45,14 @@ CREATE TABLE interactions (
 
 -- Индексы
 CREATE INDEX idx_contacts_user_id ON contacts(user_id);
+-- ivfflat индекс для ускорения поиска (опционально, на малых объемах можно без него)
 CREATE INDEX idx_contacts_embedding ON contacts USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX idx_contacts_reminder_at ON contacts(reminder_at) WHERE reminder_at IS NOT NULL;
-CREATE INDEX idx_interactions_contact_id ON interactions(contact_id);
 
--- RLS (Row Level Security) - изоляция данных по user_id
-ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE interactions ENABLE ROW LEVEL SECURITY;
-
--- Политики безопасности (все запросы фильтруются по user_id)
-CREATE POLICY "Users can only see their own contacts"
-  ON contacts FOR ALL
-  USING (auth.uid()::bigint = user_id);
-
-CREATE POLICY "Users can only see their own interactions"
-  ON interactions FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM contacts 
-      WHERE contacts.id = interactions.contact_id 
-      AND contacts.user_id = auth.uid()::bigint
-    )
-  );
+-- В MVP отключаем RLS, так как бот работает через API Key и сам контролирует доступ по user_id
+ALTER TABLE contacts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE interactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 
 -- RPC функция для поиска
 CREATE OR REPLACE FUNCTION match_contacts(
@@ -96,4 +87,3 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
-
