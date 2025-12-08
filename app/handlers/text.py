@@ -3,7 +3,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from app.services.ai_service import ai_service
 from app.services.search_service import search_service
-from app.schemas import ContactCreate, ContactDraft
+from app.services.user_service import user_service
+from app.schemas import ContactCreate, ContactDraft, UserSettings
 
 router = Router()
 
@@ -13,19 +14,41 @@ pending_contacts = {}
 
 async def handle_agent_response(message: types.Message, response):
     try:
-        # 1. Поиск
+        # 1. Поиск (Список)
         if isinstance(response, list):
             if not response:
                 await message.reply("Ничего не нашел 🤷‍♂️")
                 return
-            await message.reply(f"🔎 <b>Нашел {len(response)} контактов:</b>")
+            
+            # Собираем всё в одно сообщение
+            header = f"🔎 <b>Нашел {len(response)} контактов:</b>\n\n"
+            items_text = []
+            
+            builder = InlineKeyboardBuilder()
+            
             for res in response:
-                text = f"👤 <b>{res.name}</b>"
+                # Короткий ID (первые 5 символов) для визуальной идентификации
+                short_id = str(res.id)[:5]
+                
+                # Формируем блок текста для контакта
+                # 🆔 a1b2c | 👤 Имя
+                item_str = f"🆔 <code>{short_id}</code> | 👤 <b>{res.name}</b>"
                 if res.summary:
-                    text += f"\n📝 {res.summary}"
-                builder = InlineKeyboardBuilder()
-                builder.button(text="🗑 Удалить", callback_data=f"del_contact_{res.id}")
-                await message.answer(text, reply_markup=builder.as_markup())
+                    item_str += f"\n📝 {res.summary}"
+                
+                items_text.append(item_str)
+                
+                # Добавляем кнопку удаления с коротким ID
+                # Callback data хранит полный ID
+                builder.button(text=f"🗑 {short_id}", callback_data=f"pre_del_{res.id}")
+
+            # Объединяем через пустую строку для читаемости
+            full_text = header + "\n\n".join(items_text)
+            
+            # Выравниваем кнопки (по 3 в ряд, чтобы было компактно)
+            builder.adjust(3)
+            
+            await message.reply(full_text, reply_markup=builder.as_markup())
         
         # 2. ДРАФТ (Нужно подтверждение)
         elif isinstance(response, ContactDraft):
@@ -100,20 +123,64 @@ async def on_save_cancel(callback: types.CallbackQuery):
     await callback.message.delete()
     await callback.answer("Отменено")
 
-# ... delete callback (остается старым) ...
-@router.callback_query(F.data.startswith("del_contact_"))
-async def on_delete_click(callback: types.CallbackQuery):
-    contact_id = callback.data.replace("del_contact_", "")
+# --- ЛОГИКА УДАЛЕНИЯ ---
+
+@router.callback_query(F.data.startswith("pre_del_"))
+async def on_pre_delete_click(callback: types.CallbackQuery):
+    """
+    Нажатие на корзину. Проверяем настройки.
+    """
+    contact_id = callback.data.replace("pre_del_", "")
     user_id = callback.from_user.id
     
+    user = await user_service.get_user(user_id)
+    settings = user.settings if user else UserSettings()
+    
+    if settings.confirm_delete:
+        # Safe Mode: Спрашиваем подтверждение
+        builder = InlineKeyboardBuilder()
+        builder.button(text="✅ Да, удалить", callback_data=f"real_del_{contact_id}")
+        builder.button(text="❌ Отмена", callback_data="cancel_del")
+        builder.adjust(2)
+        
+        await callback.message.reply(
+            f"⚠️ <b>Вы уверены, что хотите удалить этот контакт?</b>\nID: <code>{contact_id[:5]}</code>", 
+            reply_markup=builder.as_markup()
+        )
+        await callback.answer()
+    else:
+        # Rage Mode: Удаляем сразу
+        await perform_delete(callback, contact_id, user_id)
+
+@router.callback_query(F.data.startswith("real_del_"))
+async def on_real_delete_confirm(callback: types.CallbackQuery):
+    """
+    Подтвержденное удаление.
+    """
+    contact_id = callback.data.replace("real_del_", "")
+    user_id = callback.from_user.id
+    await perform_delete(callback, contact_id, user_id)
+
+@router.callback_query(F.data == "cancel_del")
+async def on_cancel_delete(callback: types.CallbackQuery):
+    await callback.message.delete()
+    await callback.answer("Отменено")
+
+async def perform_delete(callback: types.CallbackQuery, contact_id: str, user_id: int):
     try:
         success = await search_service.delete_contact(contact_id, user_id)
         if success:
-            original_text = callback.message.html_text if callback.message.html_text else "Контакт"
-            await callback.message.edit_text(f"🗑 {original_text}\n\n<b>(Удалено)</b>")
-            await callback.answer("Контакт удален")
+            if callback.message.reply_to_message:
+                # Если это был ответ на сообщение с кнопками (диалог подтверждения), удаляем вопрос
+                await callback.message.delete()
+                await callback.message.answer(f"🗑 Контакт <code>{contact_id[:5]}</code> удален.")
+            else:
+                # Если это Rage mode (сразу нажали в списке)
+                await callback.answer("Контакт удален!", show_alert=True)
+                # Можно отправить сообщение в чат для лога
+                await callback.message.answer(f"🗑 Контакт <code>{contact_id[:5]}</code> удален.")
         else:
             await callback.answer("Ошибка: Контакт не найден", show_alert=True)
     except Exception as e:
-        logger.error(f"Delete callback error: {e}")
+        logger.error(f"Delete error: {e}")
         await callback.answer("Ошибка при удалении", show_alert=True)
