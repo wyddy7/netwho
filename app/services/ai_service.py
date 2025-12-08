@@ -177,6 +177,56 @@ class AIService:
             logger.error(f"Extraction failed: {e}")
             raise
 
+    async def rerank_contacts(self, query: str, candidates: List[SearchResult]) -> List[SearchResult]:
+        """
+        Фильтрует и переранжирует кандидатов с помощью LLM.
+        """
+        if not candidates:
+            return []
+            
+        # Если запрос "все", "all", то не фильтруем (это обрабатывается в search_service, но на всякий случай)
+        if query.strip() == "*" or query.lower() in ["все", "all", "все контакты"]:
+            return candidates
+
+        # Формируем компактный список для LLM
+        candidates_list = [
+            {"id": str(c.id), "name": c.name, "summary": c.summary, "meta": c.meta}
+            for c in candidates
+        ]
+        
+        system_prompt = (
+            "You are a strict relevance filter. "
+            "Your task is to analyze the user's search query and the list of candidate contacts.\n"
+            "Return a JSON object with key 'relevant_ids' containing a list of UUIDs (strings) of contacts that are STRICTLY relevant to the query.\n"
+            "If a contact matches loosely but is not what the user asked for (e.g. name match but wrong context, or wrong company), exclude it.\n"
+            "If no contacts are relevant, return empty list."
+        )
+        
+        user_content = f"Query: {query}\nCandidates: {json.dumps(candidates_list, ensure_ascii=False)}"
+        
+        try:
+            response = await self.llm_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                response_format={"type": "json_object"}
+            )
+            
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            relevant_ids = set(data.get("relevant_ids", []))
+            
+            filtered = [c for c in candidates if str(c.id) in relevant_ids]
+            
+            logger.info(f"Rerank: {len(candidates)} -> {len(filtered)}")
+            return filtered
+            
+        except Exception as e:
+            logger.error(f"Rerank failed: {e}")
+            return candidates
+
     async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft, ContactDeleteAsk, ActionConfirmed, ActionCancelled]:
         """
         Агент-маршрутизатор с памятью и поддержкой многошаговых вызовов (Loop).
@@ -251,6 +301,11 @@ class AIService:
 
                 if fn_name == "search_contacts":
                     results = await search_service.search(fn_args["query"], user_id)
+                    
+                    # Re-ranking / Filtering
+                    if results:
+                        results = await self.rerank_contacts(fn_args["query"], results)
+
                     execution_result = results
                     last_tool_list_result = results # Запоминаем для UI
                     
