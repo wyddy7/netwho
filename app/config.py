@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
 from loguru import logger
 import sys
 
@@ -25,6 +24,9 @@ class Settings(BaseSettings):
     # Security & Logging
     USER_ID_SALT: str = "default-salt-change-me"
     LOG_LEVEL: str = "INFO"
+    
+    # Chat History
+    CHAT_HISTORY_DEPTH: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -36,7 +38,7 @@ except Exception as e:
     sys.exit(1)
 
 # Настройка логгера
-logger.remove()  # Удаляем дефолтный хендлер
+logger.remove()
 logger.add(
     sys.stderr,
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
@@ -44,4 +46,3 @@ logger.add(
 )
 
 logger.info("Configuration loaded successfully")
-

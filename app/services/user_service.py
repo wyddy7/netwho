@@ -1,7 +1,9 @@
 from datetime import datetime
+from typing import List
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
 from app.schemas import UserCreate, UserInDB, UserSettings
+from app.config import settings
 
 class UserService:
     def __init__(self):
@@ -66,5 +68,39 @@ class UserService:
         except Exception as e:
             logger.error(f"Error deleting user: {e}")
             raise
+
+    async def get_chat_history(self, user_id: int) -> List[dict]:
+        """
+        Получает историю чата для формирования контекста.
+        """
+        try:
+            limit = settings.CHAT_HISTORY_DEPTH
+            # Вызываем RPC функцию
+            response = self.supabase.rpc("get_chat_history", {
+                "p_user_id": user_id,
+                "p_limit": limit
+            }).execute()
+            
+            if not response.data:
+                return []
+                
+            return [{"role": item["role"], "content": item["content"]} for item in response.data]
+        except Exception as e:
+            logger.error(f"Failed to fetch chat history: {e}")
+            return []
+
+    async def save_chat_message(self, user_id: int, role: str, content: str):
+        """
+        Сохраняет сообщение в историю.
+        """
+        try:
+            data = {
+                "user_id": user_id,
+                "role": role,
+                "content": content
+            }
+            self.supabase.table("chat_history").insert(data).execute()
+        except Exception as e:
+            logger.error(f"Failed to save chat message: {e}")
 
 user_service = UserService()

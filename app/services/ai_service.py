@@ -69,9 +69,6 @@ class AIService:
 
     async def get_embedding(self, text: str) -> list[float]:
         try:
-            # Используем OpenAI клиент для эмбеддингов (OpenRouter поддерживает некоторые модели, 
-            # но часто для эмбеддингов используют напрямую OpenAI или другую модель в OpenRouter)
-            # В конфиге у нас OPENROUTER_API_KEY, предполагаем что OpenRouter роутит к модели эмбеддингов.
             response = await self.llm_client.embeddings.create(
                 model=settings.EMBEDDING_MODEL,
                 input=text
@@ -94,7 +91,6 @@ class AIService:
             client = AsyncGroq(api_key=settings.GROQ_API_KEY)
             
             with open(file_path, "rb") as file:
-                # Читаем файл в память, так как клиент Groq ожидает (filename, content) или file-like object
                 content = file.read()
                 
             transcription = await client.audio.transcriptions.create(
@@ -134,22 +130,27 @@ class AIService:
 
     async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft]:
         """
-        Агент-маршрутизатор.
+        Агент-маршрутизатор с памятью.
         """
-        # ЛОКАЛЬНЫЙ ИМПОРТ для предотвращения циклической зависимости
+        # ЛОКАЛЬНЫЙ ИМПОРТ
         from app.services.user_service import user_service
         from app.services.search_service import search_service
         
         user = await user_service.get_user(user_id)
         settings_obj = user.settings if user and user.settings else UserSettings()
         
+        # 1. Получаем историю
+        history = await user_service.get_chat_history(user_id)
+        
         system_prompt = get_prompt("router")
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text}
-        ]
+        
+        # 2. Формируем контекст: System -> History -> Current User Message
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": user_text})
 
         try:
+            # 3. Запрос к LLM
             response = await self.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
                 messages=messages,
@@ -158,18 +159,34 @@ class AIService:
             )
             
             msg = response.choices[0].message
-            if not msg.tool_calls:
-                return msg.content
+            
+            # 4. Сохраняем сообщение Юзера в историю (только если успешно получили ответ)
+            await user_service.save_chat_message(user_id, "user", user_text)
 
+            # Обработка ответа
+            final_response = None
+            
+            if not msg.tool_calls:
+                final_response = msg.content
+                # Сохраняем текстовый ответ ассистента
+                if final_response:
+                    await user_service.save_chat_message(user_id, "assistant", final_response)
+                return final_response
+
+            # Если был Tool Call
             tool_call = msg.tool_calls[0]
             fn_name = tool_call.function.name
             fn_args = json.loads(tool_call.function.arguments)
             
             logger.info(f"Agent called: {fn_name}")
+            
+            # Сохраняем в историю факт вызова инструмента
+            tool_summary = f"[Tool Used: {fn_name}, Args: {json.dumps(fn_args, ensure_ascii=False)}]"
+            await user_service.save_chat_message(user_id, "assistant", tool_summary)
 
             if fn_name == "search_contacts":
                 results = await search_service.search(fn_args["query"], user_id)
-                return results
+                final_response = results
             
             elif fn_name == "add_contact":
                 # Логика добавления
@@ -189,39 +206,35 @@ class AIService:
                     embedding=embedding
                 )
                 
-                # ПРОВЕРКА НАСТРОЕК (Approves)
                 if settings_obj.confirm_add:
-                    # Если нужно подтверждение -> возвращаем Draft
-                    return ContactDraft(**contact_create.model_dump())
+                    final_response = ContactDraft(**contact_create.model_dump())
                 else:
-                    # Rage Mode: Сохраняем сразу
                     await search_service.create_contact(contact_create)
-                    return contact_create 
+                    final_response = contact_create 
             
             elif fn_name == "delete_contact":
                 contact_id = fn_args.get("contact_id")
-                
                 if settings_obj.confirm_delete:
-                    # Safe Mode: НЕ удаляем сразу.
-                    # Вместо этого возвращаем контакт как результат поиска (с кнопкой "Удалить").
                     contact = await search_service.get_contact_by_id(contact_id, user_id)
                     if contact:
-                        # Возвращаем список из одного SearchResult
-                        return [SearchResult(
+                        final_response = [SearchResult(
                             id=contact.id,
                             name=contact.name,
                             summary=contact.summary,
                             meta=contact.meta
                         )]
                     else:
-                        return "Контакт не найден, чтобы его удалить."
+                        final_response = "Контакт не найден."
                 else:
-                    # Rage Mode: Удаляем сразу
                     success = await search_service.delete_contact(contact_id, user_id)
                     status = 'удален' if success else 'не найден'
-                    return f"🗑 Контакт {status}."
+                    final_response = f"🗑 Контакт {status}."
 
-            return "Команда не распознана."
+            # Если ответ текстовый (от инструмента, например ошибка), сохраняем его
+            if isinstance(final_response, str):
+                await user_service.save_chat_message(user_id, "assistant", final_response)
+            
+            return final_response if final_response else "Ошибка обработки."
 
         except Exception as e:
             logger.error(f"Router Agent failed: {e}")
