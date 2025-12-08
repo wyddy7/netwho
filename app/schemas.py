@@ -3,11 +3,18 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
 
 # --- User Schemas ---
+class UserSettings(BaseModel):
+    # True = спрашивать подтверждение (Безопасный режим)
+    # False = Rage Mode (сразу делать)
+    confirm_add: bool = True 
+    confirm_delete: bool = True
+
 class UserBase(BaseModel):
     username: str | None = None
     full_name: str
     is_premium: bool = False
     terms_accepted: bool = False
+    settings: UserSettings = Field(default_factory=UserSettings)
 
 class UserCreate(UserBase):
     id: int  # Telegram ID
@@ -29,7 +36,6 @@ class ContactMeta(BaseModel):
     needs: list[str] = Field(default_factory=list)
 
 class ContactExtracted(BaseModel):
-    """Данные, извлеченные LLM из текста"""
     name: str
     summary: str
     meta: ContactMeta
@@ -41,6 +47,10 @@ class ContactCreate(BaseModel):
     raw_text: str | None = None
     meta: dict = Field(default_factory=dict)
     embedding: list[float] | None = None
+
+class ContactDraft(ContactCreate):
+    """Промежуточный объект для подтверждения добавления"""
+    pass
 
 class ContactInDB(BaseModel):
     id: UUID
@@ -54,8 +64,6 @@ class ContactInDB(BaseModel):
     reminder_at: datetime | None
     is_archived: bool
     
-    # Embedding обычно не возвращаем клиенту, он тяжелый
-    
     model_config = ConfigDict(from_attributes=True)
 
 class SearchResult(BaseModel):
@@ -63,5 +71,4 @@ class SearchResult(BaseModel):
     name: str
     summary: str | None
     meta: dict
-    distance: float
-
+    distance: float | None = None

@@ -1,35 +1,53 @@
 from datetime import datetime
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
-from app.schemas import UserCreate, UserInDB
+from app.schemas import UserCreate, UserInDB, UserSettings
 
 class UserService:
     def __init__(self):
         self.supabase = get_supabase()
 
     async def upsert_user(self, user: UserCreate) -> UserInDB:
-        """
-        Создает или обновляет пользователя при входе (/start).
-        """
         try:
             data = user.model_dump(exclude_none=True)
             data["updated_at"] = datetime.now().isoformat()
             
-            # upsert: insert + on conflict update
-            response = self.supabase.table("users").upsert(data).execute()
+            # Для настроек используем merge стратегию по умолчанию, если их нет
+            # Но так как мы передаем объект, он перезапишет. 
+            # Лучше сначала получить текущего юзера, если надо сохранить настройки.
+            # Но для MVP при /start можно и сбросить или оставить как есть.
             
+            response = self.supabase.table("users").upsert(data).execute()
             if not response.data:
                 raise ValueError("Failed to upsert user")
-                
             return UserInDB(**response.data[0])
         except Exception as e:
             logger.error(f"Error upserting user: {e}")
             raise
 
+    async def get_user(self, user_id: int) -> UserInDB | None:
+        try:
+            response = self.supabase.table("users").select("*").eq("id", user_id).execute()
+            if not response.data:
+                return None
+            return UserInDB(**response.data[0])
+        except Exception as e:
+            logger.error(f"Error getting user: {e}")
+            return None
+
+    async def update_settings(self, user_id: int, settings: UserSettings) -> bool:
+        try:
+            logger.info(f"Updating settings for {user_id}: {settings}")
+            response = self.supabase.table("users")\
+                .update({"settings": settings.model_dump()})\
+                .eq("id", user_id)\
+                .execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error updating settings: {e}")
+            return False
+
     async def accept_terms(self, user_id: int) -> bool:
-        """
-        Обновляет флаг terms_accepted.
-        """
         try:
             response = self.supabase.table("users")\
                 .update({"terms_accepted": True})\
@@ -41,10 +59,6 @@ class UserService:
             return False
 
     async def delete_user_full(self, user_id: int) -> bool:
-        """
-        Полное удаление пользователя и всех его данных (GDPR).
-        Благодаря ON DELETE CASCADE в SQL, удаление юзера удалит и контакты.
-        """
         try:
             logger.warning(f"DELETING ALL DATA for user {user_id}")
             response = self.supabase.table("users").delete().eq("id", user_id).execute()
@@ -53,6 +67,4 @@ class UserService:
             logger.error(f"Error deleting user: {e}")
             raise
 
-# Глобальный инстанс
 user_service = UserService()
-

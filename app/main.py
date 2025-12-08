@@ -6,27 +6,24 @@ from aiogram.enums import ParseMode
 from loguru import logger
 
 from app.config import settings
-from app.handlers import base, voice, text
+from app.handlers import base, voice, text, settings as settings_handler
 
 async def main():
     logger.info("Starting NetWho Bot...")
     
-    # Инициализация бота
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     
-    # Диспетчер
     dp = Dispatcher()
     
-    # Регистрация роутеров (хендлеров)
-    # Порядок важен! Сначала команды, потом голос, потом текст (catch-all)
+    # Регистрация роутеров
     dp.include_router(base.router)
+    dp.include_router(settings_handler.router) # Добавили настройки
     dp.include_router(voice.router)
     dp.include_router(text.router)
     
-    # Удаляем вебхук и запускаем поллинг
     await bot.delete_webhook(drop_pending_updates=True)
     
     logger.info("Bot started! Polling...")

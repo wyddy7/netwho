@@ -1,31 +1,26 @@
 import json
+from typing import List, Union
 from openai import AsyncOpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from loguru import logger
-from typing import Union, List
-
 from app.config import settings
-from app.schemas import ContactExtracted, ContactCreate, SearchResult
+from app.schemas import ContactCreate, SearchResult, ContactExtracted, ContactDraft, UserSettings
 from app.prompts_loader import get_prompt
 
-# Описание инструментов для Router Agent
 TOOLS_SCHEMA = [
     {
         "type": "function",
         "function": {
             "name": "search_contacts",
-            "description": "Искать контакты. Search for contacts.",
-            "strict": True,
+            "description": "Поиск контактов в базе знаний.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query (cleaned from noise)"
+                        "description": "Поисковый запрос (имя, профессия, контекст). Для 'всех' используй 'все контакты'."
                     }
                 },
-                "required": ["query"],
-                "additionalProperties": False
+                "required": ["query"]
             }
         }
     },
@@ -33,18 +28,16 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "add_contact",
-            "description": "Добавить новый контакт или заметку из текста. Add new contact/note from text.",
-            "strict": True,
+            "description": "Добавление нового контакта или заметки.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "Full raw text of the contact description"
+                        "description": "Полный текст заметки или описания контакта."
                     }
                 },
-                "required": ["text"],
-                "additionalProperties": False
+                "required": ["text"]
             }
         }
     },
@@ -52,18 +45,16 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "delete_contact",
-            "description": "Удалить контакт по ID. Delete contact by ID.",
-            "strict": True,
+            "description": "Удаление контакта по ID.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "contact_id": {
                         "type": "string",
-                        "description": "UUID of the contact"
+                        "description": "UUID контакта для удаления."
                     }
                 },
-                "required": ["contact_id"],
-                "additionalProperties": False
+                "required": ["contact_id"]
             }
         }
     }
@@ -75,77 +66,82 @@ class AIService:
             api_key=settings.OPENROUTER_API_KEY,
             base_url=settings.OPENROUTER_BASE_URL
         )
-        self.embedding_client = self.llm_client 
-        
-        self.groq_client = None
-        if settings.GROQ_API_KEY:
-            self.groq_client = AsyncOpenAI(
-                api_key=settings.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1"
-            )
-
-    async def transcribe_audio(self, audio_file_path: str) -> str:
-        if self.groq_client:
-            try:
-                logger.debug("Transcribing with Groq Whisper...")
-                with open(audio_file_path, "rb") as file:
-                    transcription = await self.groq_client.audio.transcriptions.create(
-                        file=(audio_file_path, file.read()),
-                        model="whisper-large-v3",
-                        response_format="text"
-                    )
-                return transcription
-            except Exception as e:
-                logger.warning(f"Groq STT failed: {e}. Falling back...")
-        raise RuntimeError("STT service unavailable")
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception)
-    )
-    async def extract_contact_info(self, text: str) -> ContactExtracted:
-        system_prompt = get_prompt("extractor")
-        
-        try:
-            logger.debug("Extracting entities with LLM...")
-            response = await self.llm_client.chat.completions.create(
-                model=settings.LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text}
-                ],
-                response_format={"type": "json_object"}
-            )
-            content = response.choices[0].message.content
-            if not content:
-                raise ValueError("Empty response from LLM")
-            data = json.loads(content)
-            return ContactExtracted(**data)
-        except Exception as e:
-            logger.error(f"LLM extraction failed: {e}")
-            raise
 
     async def get_embedding(self, text: str) -> list[float]:
         try:
-            response = await self.embedding_client.embeddings.create(
+            # Используем OpenAI клиент для эмбеддингов (OpenRouter поддерживает некоторые модели, 
+            # но часто для эмбеддингов используют напрямую OpenAI или другую модель в OpenRouter)
+            # В конфиге у нас OPENROUTER_API_KEY, предполагаем что OpenRouter роутит к модели эмбеддингов.
+            response = await self.llm_client.embeddings.create(
                 model=settings.EMBEDDING_MODEL,
                 input=text
             )
             return response.data[0].embedding
         except Exception as e:
-            logger.error(f"Embedding generation failed: {e}")
+            logger.error(f"Embedding failed: {e}")
             raise
 
-    async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate]:
+    async def transcribe_audio(self, file_path: str) -> str:
+        """
+        Транскрибация аудио через Groq (Whisper).
+        """
+        if not settings.GROQ_API_KEY:
+            logger.warning("GROQ_API_KEY is not set. Voice disabled.")
+            return ""
+            
+        try:
+            from groq import AsyncGroq
+            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            
+            with open(file_path, "rb") as file:
+                # Читаем файл в память, так как клиент Groq ожидает (filename, content) или file-like object
+                content = file.read()
+                
+            transcription = await client.audio.transcriptions.create(
+                file=(file_path, content),
+                model="whisper-large-v3",
+                response_format="json",
+                language="ru",
+                temperature=0.0
+            )
+            return transcription.text
+        except Exception as e:
+            logger.error(f"STT failed: {e}")
+            return ""
+
+    async def extract_contact_info(self, text: str) -> ContactExtracted:
+        """
+        Извлекает структурированные данные из текста.
+        """
+        system_prompt = get_prompt("extractor")
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text}
+        ]
+        
+        try:
+            response = await self.llm_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=messages,
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            return ContactExtracted(**data)
+        except Exception as e:
+            logger.error(f"Extraction failed: {e}")
+            raise
+
+    async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft]:
         """
         Агент-маршрутизатор.
-        Возвращает:
-        - str: Ответ пользователю
-        - list[SearchResult]: Результаты поиска
-        - ContactCreate: Если был добавлен контакт (чтобы хендлер красиво ответил)
         """
-        logger.debug(f"Router Agent processing: {user_text}")
+        # ЛОКАЛЬНЫЙ ИМПОРТ для предотвращения циклической зависимости
+        from app.services.user_service import user_service
+        from app.services.search_service import search_service
+        
+        user = await user_service.get_user(user_id)
+        settings_obj = user.settings if user and user.settings else UserSettings()
         
         system_prompt = get_prompt("router")
         messages = [
@@ -171,21 +167,19 @@ class AIService:
             
             logger.info(f"Agent called: {fn_name}")
 
-            # ЛОКАЛЬНЫЙ ИМПОРТ (чтобы избежать цикла)
-            from app.services.search_service import search_service
-
             if fn_name == "search_contacts":
                 results = await search_service.search(fn_args["query"], user_id)
                 return results
             
             elif fn_name == "add_contact":
-                # Логика добавления (как в voice handler)
+                # Логика добавления
                 text_to_process = fn_args["text"]
                 extracted = await self.extract_contact_info(text_to_process)
                 
                 full_text = f"{extracted.name} {extracted.summary} {extracted.meta}"
                 embedding = await self.get_embedding(full_text)
                 
+                # Создаем объект
                 contact_create = ContactCreate(
                     user_id=user_id,
                     name=extracted.name,
@@ -195,15 +189,39 @@ class AIService:
                     embedding=embedding
                 )
                 
-                await search_service.create_contact(contact_create)
-                return contact_create # Возвращаем объект, чтобы хендлер отрендерил "✅ Записал"
+                # ПРОВЕРКА НАСТРОЕК (Approves)
+                if settings_obj.confirm_add:
+                    # Если нужно подтверждение -> возвращаем Draft
+                    return ContactDraft(**contact_create.model_dump())
+                else:
+                    # Rage Mode: Сохраняем сразу
+                    await search_service.create_contact(contact_create)
+                    return contact_create 
             
             elif fn_name == "delete_contact":
                 contact_id = fn_args.get("contact_id")
-                if contact_id:
+                
+                if settings_obj.confirm_delete:
+                    # Safe Mode: НЕ удаляем сразу.
+                    # Вместо этого возвращаем контакт как результат поиска (с кнопкой "Удалить").
+                    contact = await search_service.get_contact_by_id(contact_id, user_id)
+                    if contact:
+                        # Возвращаем список из одного SearchResult
+                        return [SearchResult(
+                            id=contact.id,
+                            name=contact.name,
+                            summary=contact.summary,
+                            meta=contact.meta
+                        )]
+                    else:
+                        return "Контакт не найден, чтобы его удалить."
+                else:
+                    # Rage Mode: Удаляем сразу
                     success = await search_service.delete_contact(contact_id, user_id)
-                    return f"🗑 Контакт {'удален' if success else 'не найден'}."
-                return "Ошибка ID."
+                    status = 'удален' if success else 'не найден'
+                    return f"🗑 Контакт {status}."
+
+            return "Команда не распознана."
 
         except Exception as e:
             logger.error(f"Router Agent failed: {e}")
