@@ -6,6 +6,49 @@ import httpx
 
 from app.config import settings
 from app.schemas import ContactExtracted, ContactMeta
+from app.services.search_service import search_service
+
+# Описание инструментов для Router Agent
+TOOLS_SCHEMA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_contacts",
+            "description": "Search for contacts, people, or memories using semantic search.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (e.g., 'Who is Dima?', 'find developers', 'fishing lovers')"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_contact",
+            "description": "Delete a specific contact by UUID. Use this ONLY after finding the contact ID via search_contacts.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "contact_id": {
+                        "type": "string",
+                        "description": "The UUID of the contact to delete"
+                    }
+                },
+                "required": ["contact_id"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
 
 class AIService:
     def __init__(self):
@@ -15,12 +58,7 @@ class AIService:
             base_url=settings.OPENROUTER_BASE_URL
         )
         
-        # Клиент для Embeddings (напрямую OpenAI или через OpenRouter, если поддерживает)
-        # В ТЗ указано использовать OpenAI SDK, но OpenRouter тоже поддерживает embeddings.
-        # Для простоты используем тот же клиент, если модель доступна, иначе нужен отдельный ключ OpenAI.
-        # Обычно embeddings дешевле брать напрямую у OpenAI или использовать бесплатные альтернативы.
-        # Предполагаем, что OPENROUTER_API_KEY позволяет доступ к embeddings или модель доступна.
-        # Если нет - код придется адаптировать под отдельный ключ.
+        # Клиент для Embeddings (напрямую OpenAI или через OpenRouter)
         self.embedding_client = self.llm_client 
 
         # Клиент для Groq (STT)
@@ -49,11 +87,6 @@ class AIService:
             except Exception as e:
                 logger.warning(f"Groq STT failed: {e}. Falling back...")
         
-        # Fallback (если Groq нет или упал)
-        # В MVP мы не подключали платный OpenAI для STT, поэтому здесь либо ошибка, либо
-        # если OpenRouter поддерживает STT (обычно нет).
-        # Для надежности можно использовать локальный faster-whisper (как в ТЗ), 
-        # но пока вернем ошибку или попробуем через основной клиент (вдруг там есть модель).
         raise RuntimeError("STT service unavailable (Groq failed or not configured)")
 
     @retry(
@@ -103,8 +136,6 @@ class AIService:
                 raise ValueError("Empty response from LLM")
 
             data = json.loads(content)
-            
-            # Валидация через Pydantic
             return ContactExtracted(**data)
 
         except Exception as e:
@@ -116,8 +147,6 @@ class AIService:
         Генерация векторного представления текста.
         """
         try:
-            # Важно: OpenRouter может маппить модели по-разному.
-            # Если не работает, можно использовать text-embedding-ada-002
             response = await self.embedding_client.embeddings.create(
                 model=settings.EMBEDDING_MODEL,
                 input=text
@@ -127,6 +156,67 @@ class AIService:
             logger.error(f"Embedding generation failed: {e}")
             raise
 
+    async def run_router_agent(self, user_text: str, user_id: int) -> str | list:
+        """
+        Агент-маршрутизатор.
+        Возвращает либо строку (ответ пользователю), либо список результатов поиска.
+        """
+        logger.debug(f"Router Agent processing: {user_text}")
+        
+        messages = [
+            {
+                "role": "system", 
+                "content": (
+                    "You are a helpful Personal CRM assistant. "
+                    "Determine user intent from the message. "
+                    "If user asks to FIND someone -> use 'search_contacts'. "
+                    "If user asks to DELETE someone -> you MUST first SEARCH for them using 'search_contacts' to get their ID. "
+                    "If user just chats (hello, how are you) -> reply with text."
+                )
+            },
+            {"role": "user", "content": user_text}
+        ]
+
+        try:
+            # 1. Запрос к LLM с инструментами
+            response = await self.llm_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=messages,
+                tools=TOOLS_SCHEMA,
+                tool_choice="auto"
+            )
+            
+            msg = response.choices[0].message
+            
+            # 2. Если LLM не хочет вызывать функции -> это просто болтовня
+            if not msg.tool_calls:
+                return msg.content
+
+            # 3. Обработка вызовов функций
+            tool_call = msg.tool_calls[0] # Берем первый вызов (DeepSeek V3 обычно делает по одному)
+            fn_name = tool_call.function.name
+            fn_args = json.loads(tool_call.function.arguments)
+            
+            logger.info(f"Agent decided to call: {fn_name} with {fn_args}")
+
+            if fn_name == "search_contacts":
+                results = await search_service.search(fn_args["query"], user_id)
+                return results # Возвращаем список объектов SearchResult
+            
+            elif fn_name == "delete_contact":
+                contact_id = fn_args.get("contact_id")
+                # Тут тонкий момент: LLM могла галлюцинировать ID, если не искала до этого.
+                # Но мы в промпте попросили сначала искать.
+                if contact_id:
+                    success = await search_service.delete_contact(contact_id, user_id)
+                    return f"🗑 Контакт {'удален' if success else 'не найден'}."
+                return "Ошибка: Не указан ID контакта."
+                
+            return "Неизвестная функция."
+
+        except Exception as e:
+            logger.error(f"Router Agent failed: {e}")
+            return "Произошла ошибка при обработке запроса."
+
 # Глобальный инстанс
 ai_service = AIService()
-

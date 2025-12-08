@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from loguru import logger
 
 from app.config import settings
-from app.handlers import base, voice
+from app.handlers import base, voice, text
 
 async def main():
     logger.info("Starting NetWho Bot...")
@@ -21,9 +21,10 @@ async def main():
     dp = Dispatcher()
     
     # Регистрация роутеров (хендлеров)
+    # Порядок важен! Сначала команды, потом голос, потом текст (catch-all)
     dp.include_router(base.router)
     dp.include_router(voice.router)
-    # text.router будет добавлен в Epic 5
+    dp.include_router(text.router)
     
     # Удаляем вебхук и запускаем поллинг
     await bot.delete_webhook(drop_pending_updates=True)
@@ -38,11 +39,9 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        # Windows-специфичный фикс для asyncio (Event Loop)
         if sys.platform == "win32":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("Bot stopped by user")
-

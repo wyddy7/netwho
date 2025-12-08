@@ -2,7 +2,7 @@ from uuid import UUID
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
 from app.schemas import ContactCreate, ContactInDB, SearchResult
-from app.services.ai_service import ai_service
+# Убрали импорт ai_service отсюда
 
 class SearchService:
     def __init__(self):
@@ -70,6 +70,9 @@ class SearchService:
         """
         try:
             logger.debug(f"Searching for '{query}' for user {user_id}...")
+            
+            # Локальный импорт для разрыва цикла
+            from app.services.ai_service import ai_service
             
             # 1. Генерируем вектор запроса
             embedding = await ai_service.get_embedding(query)
