@@ -113,4 +113,33 @@ class UserService:
         except Exception as e:
             logger.error(f"Failed to clear chat history: {e}")
 
+    async def delete_last_messages(self, user_id: int, count: int) -> int:
+        """
+        Удаляет последние N сообщений из истории.
+        """
+        try:
+            # 1. Получаем ID последних N сообщений
+            response = self.supabase.table("chat_history")\
+                .select("id")\
+                .eq("user_id", user_id)\
+                .order("created_at", desc=True)\
+                .limit(count)\
+                .execute()
+            
+            if not response.data:
+                return 0
+                
+            ids_to_delete = [item['id'] for item in response.data]
+            
+            # 2. Удаляем их
+            self.supabase.table("chat_history")\
+                .delete()\
+                .in_("id", ids_to_delete)\
+                .execute()
+                
+            return len(ids_to_delete)
+        except Exception as e:
+            logger.error(f"Failed to delete last {count} messages: {e}")
+            return 0
+
 user_service = UserService()

@@ -77,7 +77,11 @@ async def handle_agent_response(message: types.Message, response):
 
         # 4. Текст
         elif isinstance(response, str):
-            await message.reply(response)
+            try:
+                await message.reply(response)
+            except Exception as e:
+                logger.warning(f"Failed to send text with parse_mode (HTML?): {e}. Sending plain text.")
+                await message.reply(response, parse_mode=None)
 
     except Exception as e:
         logger.error(f"Agent response handler error: {e}")

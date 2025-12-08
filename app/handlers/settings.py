@@ -4,6 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from app.services.user_service import user_service
 from app.schemas import UserSettings
+from app.config import settings as app_settings
 
 router = Router()
 
@@ -19,6 +20,7 @@ async def cmd_settings(message: types.Message):
     
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Approves (Подтверждения)", callback_data="settings_approves")
+    builder.button(text="📜 History (История)", callback_data="settings_history")
     builder.button(text="❌ Закрыть", callback_data="close_settings")
     builder.adjust(1)
     
@@ -69,6 +71,44 @@ async def show_approves(callback: types.CallbackQuery):
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
 
+@router.callback_query(F.data == "settings_history")
+async def show_history(callback: types.CallbackQuery):
+    """
+    Подменю History.
+    """
+    depth = app_settings.CHAT_HISTORY_DEPTH
+    text = (
+        "📜 <b>Настройки Истории</b>\n\n"
+        f"Глубина контекста: <b>{depth} сообщений</b>.\n"
+        "Вы можете сбросить (удалить) последние сообщения из памяти бота, чтобы начать диалог с чистого листа.\n\n"
+        "<i>Это полезно, если бот запутался в контексте.</i>"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"🗑 Сбросить последние {depth}", callback_data="reset_history_confirm")
+    builder.button(text="⬅️ Назад", callback_data="settings_main")
+    builder.adjust(1)
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+
+@router.callback_query(F.data == "reset_history_confirm")
+async def reset_history_confirm(callback: types.CallbackQuery):
+    """
+    Выполнение сброса истории.
+    """
+    user_id = callback.from_user.id
+    depth = app_settings.CHAT_HISTORY_DEPTH
+    
+    count = await user_service.delete_last_messages(user_id, depth)
+    
+    if count > 0:
+        await callback.answer(f"Удалено {count} сообщений из истории!", show_alert=True)
+    else:
+        await callback.answer("История пуста или ошибка.", show_alert=True)
+        
+    # Возвращаемся в меню истории
+    await show_history(callback)
+
 @router.callback_query(F.data.startswith("toggle_"))
 async def toggle_setting(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -111,6 +151,7 @@ async def back_to_main(callback: types.CallbackQuery):
     text = "⚙️ <b>Настройки NetWho</b>\n\nВыберите раздел:"
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Approves (Подтверждения)", callback_data="settings_approves")
+    builder.button(text="📜 History (История)", callback_data="settings_history")
     builder.button(text="❌ Закрыть", callback_data="close_settings")
     builder.adjust(1)
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
