@@ -107,7 +107,12 @@ async def reset_history_confirm(callback: types.CallbackQuery):
         await callback.answer("История пуста или ошибка.", show_alert=True)
         
     # Возвращаемся в меню истории
-    await show_history(callback)
+    try:
+        await show_history(callback)
+    except Exception as e:
+        # Игнорируем ошибку "message is not modified", если текст не изменился
+        if "message is not modified" not in str(e):
+            logger.error(f"Error resetting history UI: {e}")
 
 @router.callback_query(F.data.startswith("toggle_"))
 async def toggle_setting(callback: types.CallbackQuery):

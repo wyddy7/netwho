@@ -45,7 +45,8 @@ async def handle_agent_response(message: types.Message, response):
             pending_actions[user_id] = {"type": "add", "data": response}
             
             text = (
-                f"📝 <b>Проверь перед сохранением:</b>\n\n"
+                f"📝 <b>Проверь перед сохранением:</b>\n"
+                f"<i>(Нажми кнопку или напиши «Да»)</i>\n\n"
                 f"👤 <b>{response.name}</b>\n"
                 f"{response.summary}\n\n"
                 "Сохранить?"
@@ -61,7 +62,8 @@ async def handle_agent_response(message: types.Message, response):
             pending_actions[user_id] = {"type": "del", "data": response.contact_id}
             
             text = (
-                f"⚠️ <b>Удалить этот контакт?</b>\n\n"
+                f"⚠️ <b>Удалить этот контакт?</b>\n"
+                f"<i>(Нажми кнопку или напиши «Да»)</i>\n\n"
                 f"👤 <b>{response.name}</b>\n"
                 f"{response.summary}"
             )
