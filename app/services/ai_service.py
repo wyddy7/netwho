@@ -3,7 +3,7 @@ from typing import List, Union
 from openai import AsyncOpenAI
 from loguru import logger
 from app.config import settings
-from app.schemas import ContactCreate, SearchResult, ContactExtracted, ContactDraft, UserSettings
+from app.schemas import ContactCreate, SearchResult, ContactExtracted, ContactDraft, UserSettings, ContactConfirm
 from app.prompts_loader import get_prompt
 
 TOOLS_SCHEMA = [
@@ -38,6 +38,18 @@ TOOLS_SCHEMA = [
                     }
                 },
                 "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirm_save",
+            "description": "Подтверждение сохранения текущего черновика контакта (когда пользователь пишет 'да', 'сохрани').",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
             }
         }
     },
@@ -149,7 +161,7 @@ class AIService:
             logger.error(f"Extraction failed: {e}")
             raise
 
-    async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft]:
+    async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft, ContactConfirm]:
         """
         Агент-маршрутизатор с памятью.
         """
@@ -238,10 +250,16 @@ class AIService:
                 
                 if settings_obj.confirm_add:
                     final_response = ContactDraft(**contact_create.model_dump())
+                    # ВАЖНО: Добавляем в историю, что мы ждем подтверждения
+                    await user_service.save_chat_message(user_id, "system", "[System] Draft created. Waiting for user confirmation (click button OR type 'confirm/yes').")
                 else:
                     await search_service.create_contact(contact_create)
                     final_response = contact_create 
             
+            elif fn_name == "confirm_save":
+                # Агент решил подтвердить сохранение (поняв это из текста юзера)
+                final_response = ContactConfirm()
+
             elif fn_name == "delete_contact":
                 contact_id = fn_args.get("contact_id")
                 if settings_obj.confirm_delete:

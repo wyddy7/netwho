@@ -52,6 +52,10 @@ class ContactDraft(ContactCreate):
     """Промежуточный объект для подтверждения добавления"""
     pass
 
+class ContactConfirm(BaseModel):
+    """Сигнал о подтверждении действия из текста"""
+    action: str = "save_draft"
+
 class ContactInDB(BaseModel):
     id: UUID
     user_id: int

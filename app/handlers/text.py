@@ -4,7 +4,7 @@ from loguru import logger
 from app.services.ai_service import ai_service
 from app.services.search_service import search_service
 from app.services.user_service import user_service
-from app.schemas import ContactCreate, ContactDraft, UserSettings
+from app.schemas import ContactCreate, ContactDraft, UserSettings, ContactConfirm
 
 router = Router()
 
@@ -66,8 +66,21 @@ async def handle_agent_response(message: types.Message, response):
             builder.button(text="❌ Отмена", callback_data="cancel_save")
             builder.adjust(2)
             await message.reply(text, reply_markup=builder.as_markup())
+        
+        # 3. ПОДТВЕРЖДЕНИЕ ИЗ ТЕКСТА (Агент решил подтвердить сохранение)
+        elif isinstance(response, ContactConfirm):
+            user_id = message.from_user.id
+            draft = pending_contacts.pop(user_id, None)
+            
+            if draft:
+                await search_service.create_contact(draft)
+                await message.reply(
+                    f"✅ <b>Записал (через команду):</b> {draft.name}\n\n📝 {draft.summary}"
+                )
+            else:
+                await message.reply("⚠️ Нечего сохранять. Возможно, время черновика истекло или он уже сохранен.")
 
-        # 3. УСПЕХ (Rage Mode или авто-сохранение)
+        # 4. УСПЕХ (Rage Mode или авто-сохранение)
         elif isinstance(response, ContactCreate):
             res_text = (
                 f"✅ <b>Записал:</b> {response.name}\n\n"
@@ -75,7 +88,7 @@ async def handle_agent_response(message: types.Message, response):
             )
             await message.reply(res_text)
 
-        # 4. Текст
+        # 5. Текст
         elif isinstance(response, str):
             try:
                 await message.reply(response)
