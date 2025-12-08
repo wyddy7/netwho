@@ -5,7 +5,7 @@ from loguru import logger
 from app.config import settings
 from app.schemas import (
     ContactCreate, SearchResult, ContactExtracted, 
-    ContactDraft, UserSettings, ContactDeleteAsk,
+    ContactDraft, UserSettings, ContactDeleteAsk, ContactUpdateAsk,
     ActionConfirmed, ActionCancelled
 )
 from app.prompts_loader import get_prompt
@@ -32,13 +32,17 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "add_contact",
-            "description": "Добавление нового контакта или заметки.",
+            "description": "Добавление нового контакта. Если имя похоже на существующее, используй force_new=False для проверки.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "text": {
                         "type": "string",
                         "description": "Полный текст заметки или описания контакта."
+                    },
+                    "force_new": {
+                        "type": "boolean",
+                        "description": "Если True - создает контакт даже если есть дубликат по имени. Default: False."
                     }
                 },
                 "required": ["text"]
@@ -326,7 +330,29 @@ class AIService:
                 
                 elif fn_name == "add_contact":
                     text_to_process = fn_args["text"]
+                    force_new = fn_args.get("force_new", False)
+                    
                     extracted = await self.extract_contact_info(text_to_process)
+                    
+                    # --- Disambiguation Check ---
+                    if not force_new:
+                        duplicates = await search_service.find_similar_contacts_by_name(extracted.name, user_id)
+                        # Фильтруем совсем левые совпадения, если надо, но пока верим базе
+                        if duplicates:
+                            dup_list_str = "\n".join([f"- ID: {d.id} | Name: {d.name} | Summary: {d.summary}" for d in duplicates])
+                            tool_result_content = (
+                                f"WARNING: Found existing contacts with similar name '{extracted.name}':\n{dup_list_str}\n\n"
+                                "ACTION REQUIRED: Ask user if they want to UPDATE one of these (call update_contact) "
+                                "or CREATE NEW (call add_contact with force_new=True)."
+                            )
+                            # Прерываем выполнение, возвращаем инфу агенту
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": tool_result_content
+                            })
+                            continue # Переход к следующему шагу цикла (LLM увидит предупреждение)
+
                     full_text = f"{extracted.name} {extracted.summary} {extracted.meta}"
                     embedding = await self.get_embedding(full_text)
                     
@@ -392,8 +418,19 @@ class AIService:
                             "raw_text": updated_raw_text,
                             "embedding": embedding
                         }
-                        await search_service.update_contact(contact_id, user_id, updates)
-                        tool_result_content = f"Contact '{extracted.name}' updated."
+                        
+                        if settings_obj.confirm_update:
+                             await user_service.save_chat_message(user_id, "system", f"[System] Update requested for ID {contact_id}. Waiting for confirmation.")
+                             return ContactUpdateAsk(
+                                 contact_id=str(existing.id),
+                                 name=existing.name,
+                                 old_summary=existing.summary,
+                                 new_summary=extracted.summary,
+                                 updates=updates
+                             )
+                        else:
+                            await search_service.update_contact(contact_id, user_id, updates)
+                            tool_result_content = f"Contact '{extracted.name}' updated."
 
                 # Добавляем результат инструмента в messages для следующего шага LLM
                 messages.append({

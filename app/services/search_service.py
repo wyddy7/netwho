@@ -58,6 +58,26 @@ class SearchService:
             logger.error(f"Error deleting contact: {e}")
             raise
     
+    async def find_similar_contacts_by_name(self, name: str, user_id: int) -> list[ContactInDB]:
+        """
+        Ищет контакты с похожим именем (ILike).
+        """
+        try:
+            # Простой поиск по подстроке case-insensitive
+            response = self.supabase.table("contacts")\
+                .select("*")\
+                .eq("user_id", user_id)\
+                .ilike("name", f"%{name}%")\
+                .execute()
+            
+            if not response.data:
+                return []
+                
+            return [ContactInDB(**item) for item in response.data]
+        except Exception as e:
+            logger.error(f"Find similar failed: {e}")
+            return []
+
     async def get_recent_contacts(self, user_id: int, limit: int = 10) -> list[SearchResult]:
         """
         Получить последние добавленные контакты (для запроса "Кто у меня есть").

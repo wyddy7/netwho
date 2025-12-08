@@ -8,6 +8,7 @@ class UserSettings(BaseModel):
     # False = Rage Mode (сразу делать)
     confirm_add: bool = True 
     confirm_delete: bool = True
+    confirm_update: bool = True
 
 class UserBase(BaseModel):
     username: str | None = None
@@ -57,6 +58,14 @@ class ContactDeleteAsk(BaseModel):
     contact_id: str
     name: str
     summary: str | None
+
+class ContactUpdateAsk(BaseModel):
+    """Объект запроса подтверждения обновления"""
+    contact_id: str
+    name: str
+    old_summary: str | None
+    new_summary: str
+    updates: dict
 
 class ActionConfirmed(BaseModel):
     """Сигнал о подтверждении действия из текста"""

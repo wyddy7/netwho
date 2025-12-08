@@ -6,12 +6,12 @@ from app.services.search_service import search_service
 from app.services.user_service import user_service
 from app.schemas import (
     ContactCreate, ContactDraft, UserSettings, 
-    ContactDeleteAsk, ActionConfirmed, ActionCancelled
+    ContactDeleteAsk, ContactUpdateAsk, ActionConfirmed, ActionCancelled
 )
 
 router = Router()
 
-# {user_id: {"type": "add"|"del", "data": ...}}
+# {user_id: {"type": "add"|"del"|"update", "data": ...}}
 pending_actions = {}
 
 async def handle_agent_response(message: types.Message, response):
@@ -72,8 +72,25 @@ async def handle_agent_response(message: types.Message, response):
             builder.button(text="❌ Отмена", callback_data="cancel_action")
             builder.adjust(2)
             await message.reply(text, reply_markup=builder.as_markup())
+
+        # 4. ПОДТВЕРЖДЕНИЕ ОБНОВЛЕНИЯ
+        elif isinstance(response, ContactUpdateAsk):
+            pending_actions[user_id] = {"type": "update", "data": response}
+            
+            text = (
+                f"✏️ <b>Обновить контакт?</b>\n"
+                f"<i>(Нажми кнопку или напиши «Да»)</i>\n\n"
+                f"👤 <b>{response.name}</b>\n"
+                f"Было:\n{response.old_summary or '...'}\n\n"
+                f"Станет:\n{response.new_summary}"
+            )
+            builder = InlineKeyboardBuilder()
+            builder.button(text="💾 Сохранить", callback_data="confirm_action")
+            builder.button(text="❌ Отмена", callback_data="cancel_action")
+            builder.adjust(2)
+            await message.reply(text, reply_markup=builder.as_markup())
         
-        # 4. ДЕЙСТВИЕ ПОДТВЕРЖДЕНО (из текста "да")
+        # 5. ДЕЙСТВИЕ ПОДТВЕРЖДЕНО (из текста "да")
         elif isinstance(response, ActionConfirmed):
             action = pending_actions.pop(user_id, None)
             if not action:
@@ -90,10 +107,16 @@ async def handle_agent_response(message: types.Message, response):
                 await search_service.delete_contact(contact_id, user_id)
                 await message.reply(f"🗑 Контакт удален.")
 
-        # 5. ДЕЙСТВИЕ ОТМЕНЕНО (из текста "нет")
+            elif action["type"] == "update":
+                update_ask = action["data"]
+                await search_service.update_contact(update_ask.contact_id, user_id, update_ask.updates)
+                await message.reply(f"✅ <b>Обновил:</b> {update_ask.name}")
+            
+        # 6. ДЕЙСТВИЕ ОТМЕНЕНО (из текста "нет")
         elif isinstance(response, ActionCancelled):
             pending_actions.pop(user_id, None)
             await message.reply("❌ Действие отменено.")
+
 
         # 6. УСПЕХ (Rage Mode или авто-сохранение)
         elif isinstance(response, ContactCreate):
@@ -156,6 +179,14 @@ async def on_action_confirm(callback: types.CallbackQuery):
                 await callback.answer("Удалено!")
             else:
                 await callback.answer("Ошибка: контакт не найден", show_alert=True)
+        
+        elif action["type"] == "update":
+            update_ask = action["data"]
+            await search_service.update_contact(update_ask.contact_id, user_id, update_ask.updates)
+            await callback.message.edit_text(
+                f"✅ <b>Обновил:</b> {update_ask.name}\n\n📝 {update_ask.new_summary}"
+            )
+            await callback.answer("Обновлено!")
                 
     except Exception as e:
         logger.error(f"Action confirm error: {e}")
