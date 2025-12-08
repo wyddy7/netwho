@@ -142,6 +142,18 @@ async def handle_agent_response(message: types.Message, response):
 async def handle_text(message: types.Message):
     user_id = message.from_user.id
     user_text = message.text
+    
+    # --- Confirmation Lock (Блокировка действий) ---
+    if user_id in pending_actions:
+        # Разрешаем только короткие ответы для подтверждения/отмены
+        # (Хотя по хорошему надо бы перехватывать "да"/"нет" и вызывать колбэки программно, 
+        # но агент сам умеет вызывать confirm_action/cancel_action, если поймет текст)
+        
+        # Но если юзер пытается сделать что-то новое (длинный текст, новая команда), лучше предупредить
+        # Простая эвристика: если текст похож на команду добавления/поиска
+        # Пусть агент сам разруливает, НО мы добавим системный контекст
+        pass 
+        
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     try:
         response = await ai_service.run_router_agent(user_text, user_id)
@@ -165,11 +177,13 @@ async def on_action_confirm(callback: types.CallbackQuery):
     try:
         if action["type"] == "add":
             draft = action["data"]
-            await search_service.create_contact(draft)
+            contact_db = await search_service.create_contact(draft)
             await callback.message.edit_text(
                 f"✅ <b>Записал:</b> {draft.name}\n\n📝 {draft.summary}"
             )
             await callback.answer("Сохранено!")
+            # System Feedback Loop
+            await user_service.save_chat_message(user_id, "system", f"[System] Contact '{draft.name}' (ID: {contact_db.id}) created successfully.")
             
         elif action["type"] == "del":
             contact_id = action["data"]
@@ -177,8 +191,11 @@ async def on_action_confirm(callback: types.CallbackQuery):
             if success:
                 await callback.message.edit_text(f"🗑 Контакт удален.")
                 await callback.answer("Удалено!")
+                # System Feedback Loop
+                await user_service.save_chat_message(user_id, "system", f"[System] Contact {contact_id} deleted successfully.")
             else:
                 await callback.answer("Ошибка: контакт не найден", show_alert=True)
+                await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Not found.")
         
         elif action["type"] == "update":
             update_ask = action["data"]
@@ -187,10 +204,13 @@ async def on_action_confirm(callback: types.CallbackQuery):
                 f"✅ <b>Обновил:</b> {update_ask.name}\n\n📝 {update_ask.new_summary}"
             )
             await callback.answer("Обновлено!")
-                
+            # System Feedback Loop
+            await user_service.save_chat_message(user_id, "system", f"[System] Contact '{update_ask.name}' updated successfully.")
+
     except Exception as e:
         logger.error(f"Action confirm error: {e}")
         await callback.answer("Ошибка выполнения", show_alert=True)
+        await user_service.save_chat_message(user_id, "system", f"[System] Action failed with error: {e}")
 
 @router.callback_query(F.data == "cancel_action")
 async def on_action_cancel(callback: types.CallbackQuery):
@@ -198,6 +218,8 @@ async def on_action_cancel(callback: types.CallbackQuery):
     pending_actions.pop(user_id, None)
     await callback.message.delete()
     await callback.answer("Отменено")
+    # System Feedback Loop
+    await user_service.save_chat_message(user_id, "system", "[System] User cancelled the action.")
 
 # --- ЛОГИКА УДАЛЕНИЯ ЧЕРЕЗ КНОПКУ КОРЗИНЫ В СПИСКЕ ---
 

@@ -85,7 +85,7 @@ async def show_history(callback: types.CallbackQuery):
     )
     
     builder = InlineKeyboardBuilder()
-    builder.button(text=f"🗑 Сбросить последние {depth}", callback_data="reset_history_confirm")
+    builder.button(text="🔥 Сбросить ВСЮ историю", callback_data="reset_history_confirm")
     builder.button(text="⬅️ Назад", callback_data="settings_main")
     builder.adjust(1)
     
@@ -97,20 +97,17 @@ async def reset_history_confirm(callback: types.CallbackQuery):
     Выполнение сброса истории.
     """
     user_id = callback.from_user.id
-    depth = app_settings.CHAT_HISTORY_DEPTH
     
-    count = await user_service.delete_last_messages(user_id, depth)
+    await user_service.clear_history(user_id)
+    # Важно: Добавляем системное сообщение о сбросе, чтобы агент "почувствовал" это, если вдруг контекст сохранился где-то
+    await user_service.save_chat_message(user_id, "system", "[System] User cleared conversation history. Memory wiped.")
     
-    if count > 0:
-        await callback.answer(f"Удалено {count} сообщений из истории!", show_alert=True)
-    else:
-        await callback.answer("История пуста или ошибка.", show_alert=True)
+    await callback.answer(f"История полностью очищена!", show_alert=True)
         
     # Возвращаемся в меню истории
     try:
         await show_history(callback)
     except Exception as e:
-        # Игнорируем ошибку "message is not modified", если текст не изменился
         if "message is not modified" not in str(e):
             logger.error(f"Error resetting history UI: {e}")
 

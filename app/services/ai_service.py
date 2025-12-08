@@ -181,6 +181,32 @@ class AIService:
             logger.error(f"Extraction failed: {e}")
             raise
 
+    async def refine_contact_info(self, old_summary: str, update_text: str) -> ContactExtracted:
+        """
+        Обновляет информацию о контакте на основе старой инфы и обновления.
+        """
+        system_prompt = get_prompt("refiner")
+        user_content = f"OLD_SUMMARY:\n{old_summary}\n\nUPDATE:\n{update_text}"
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ]
+        
+        try:
+            response = await self.llm_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=messages,
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            data = json.loads(content)
+            return ContactExtracted(**data)
+        except Exception as e:
+            logger.error(f"Refinement failed: {e}")
+            # Fallback: просто используем экстрактор на новом тексте, если рефайнер упал
+            return await self.extract_contact_info(update_text)
+
     async def rerank_contacts(self, query: str, candidates: List[SearchResult]) -> List[SearchResult]:
         """
         Фильтрует и переранжирует кандидатов с помощью LLM.
@@ -406,8 +432,13 @@ class AIService:
                     if not existing:
                         tool_result_content = "Contact not found."
                     else:
-                        updated_raw_text = f"{existing.raw_text}\n\n[Update]: {new_text}"
-                        extracted = await self.extract_contact_info(updated_raw_text)
+                        # Используем Refiner вместо тупого Append + Extract
+                        extracted = await self.refine_contact_info(
+                            old_summary=existing.summary or "",
+                            update_text=new_text
+                        )
+                        
+                        updated_raw_text = f"{existing.raw_text}\n\n[Refined Update]: {new_text}"
                         full_text = f"{extracted.name} {extracted.summary} {extracted.meta}"
                         embedding = await self.get_embedding(full_text)
                         
