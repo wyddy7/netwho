@@ -103,4 +103,14 @@ class UserService:
         except Exception as e:
             logger.error(f"Failed to save chat message: {e}")
 
+    async def clear_history(self, user_id: int):
+        """
+        Очищает историю сообщений пользователя.
+        """
+        try:
+            # Удаляем все записи из chat_history для данного user_id
+            self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
+        except Exception as e:
+            logger.error(f"Failed to clear chat history: {e}")
+
 user_service = UserService()

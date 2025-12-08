@@ -7,6 +7,26 @@ from loguru import logger
 
 from app.config import settings
 from app.handlers import base, voice, text, settings as settings_handler
+from app.services.user_service import user_service
+
+# Твой ID для уведомлений (можно вынести в .env, но пока так)
+ADMIN_ID = 6108932752
+
+async def on_startup(bot: Bot):
+    logger.info("Bot started! Polling...")
+    try:
+        # Уведомляем админа
+        await bot.send_message(
+            ADMIN_ID, 
+            "🔄 <b>Бот был перезапущен.</b>\nИстория диалога сброшена (в памяти агента).",
+            parse_mode="HTML"
+        )
+        # Очищаем историю чата для админа в БД, чтобы начать с чистого листа
+        # (Это жесткий сброс, но для тестов идеально)
+        await user_service.clear_history(ADMIN_ID)
+        logger.info(f"History cleared for user {ADMIN_ID}")
+    except Exception as e:
+        logger.error(f"Failed to send startup message: {e}")
 
 async def main():
     logger.info("Starting NetWho Bot...")
@@ -20,13 +40,15 @@ async def main():
     
     # Регистрация роутеров
     dp.include_router(base.router)
-    dp.include_router(settings_handler.router) # Добавили настройки
+    dp.include_router(settings_handler.router)
     dp.include_router(voice.router)
     dp.include_router(text.router)
     
+    # Хук на старт
+    dp.startup.register(on_startup)
+    
     await bot.delete_webhook(drop_pending_updates=True)
     
-    logger.info("Bot started! Polling...")
     try:
         await dp.start_polling(bot)
     except Exception as e:

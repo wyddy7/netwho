@@ -32,6 +32,20 @@ class SearchService:
             logger.error(f"Error getting contact: {e}")
             raise
 
+    async def update_contact(self, contact_id: UUID | str, user_id: int, updates: dict) -> ContactInDB | None:
+        try:
+            response = self.supabase.table("contacts")\
+                .update(updates)\
+                .eq("id", str(contact_id))\
+                .eq("user_id", user_id)\
+                .execute()
+            if not response.data:
+                return None
+            return ContactInDB(**response.data[0])
+        except Exception as e:
+            logger.error(f"Error updating contact: {e}")
+            raise
+
     async def delete_contact(self, contact_id: UUID | str, user_id: int) -> bool:
         try:
             response = self.supabase.table("contacts")\
