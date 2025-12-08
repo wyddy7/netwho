@@ -52,9 +52,19 @@ class ContactDraft(ContactCreate):
     """Промежуточный объект для подтверждения добавления"""
     pass
 
-class ContactConfirm(BaseModel):
+class ContactDeleteAsk(BaseModel):
+    """Объект запроса подтверждения удаления"""
+    contact_id: str
+    name: str
+    summary: str | None
+
+class ActionConfirmed(BaseModel):
     """Сигнал о подтверждении действия из текста"""
-    action: str = "save_draft"
+    action: str = "confirm"
+
+class ActionCancelled(BaseModel):
+    """Сигнал об отмене действия из текста"""
+    action: str = "cancel"
 
 class ContactInDB(BaseModel):
     id: UUID
