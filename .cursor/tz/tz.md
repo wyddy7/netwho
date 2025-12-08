@@ -32,7 +32,7 @@
 - **Fallback / Fast LLM:** `google/gemini-flash-1.5` — для быстрых задач или если DeepSeek перегружен.
 - **Embeddings:** `openai/text-embedding-3-small` (через OpenRouter или напрямую OpenAI, если есть ключ).
 - **STT (Speech-to-Text):**
-  - Приоритет: **Groq** (Whisper-large-v3) через OpenRouter или напрямую (бесплатно и быстро)
+  - Приоритет: **Groq** (whisper-large-v3-turbo) через OpenRouter или напрямую (бесплатно и быстро)
   - Фоллбэк: `faster-whisper` (локально на CPU), если внешние API недоступны
 
 ### 2.3. Инструментарий

@@ -17,7 +17,7 @@
 
 ## Шаг 2.3: STT Интеграция (Whisper)
 - [ ] Добавить метод транскрибации в `app/services/ai_service.py` (или `stt_service.py`).
-- [ ] Реализовать запрос к Groq (Whisper-large-v3) или OpenAI Whisper.
+- [ ] Реализовать запрос к Groq (whisper-large-v3-turbo) или OpenAI Whisper.
 - [ ] Обработать ошибки API.
 
 ## Шаг 2.4: LLM Клиент и Экстракция (AI Core)
