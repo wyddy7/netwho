@@ -1,11 +1,13 @@
 import asyncio
+import datetime
 from loguru import logger
 from aiogram import Bot
 from app.infrastructure.supabase.client import get_supabase
 from app.services.ai_service import ai_service
 from app.services.search_service import search_service
+from app.services.user_service import user_service
+from app.schemas import RecallSettings
 from app.config import settings
-
 from app.prompts_loader import get_prompt
 
 class RecallService:
@@ -25,7 +27,7 @@ class RecallService:
             logger.error(f"Error getting random contacts for {user_id}: {e}")
             return []
 
-    async def generate_recall_message(self, contacts: list) -> str:
+    async def generate_recall_message(self, contacts: list, bio: str = None, focus: str = None) -> str:
         """
         Генерирует стратегический совет по нетворку на основе списка контактов.
         """
@@ -35,7 +37,15 @@ class RecallService:
         ])
 
         system_prompt = get_prompt("recall_advisor")
-        user_content = f"Contacts List:\n{contacts_str}"
+        
+        # Добавляем контекст пользователя
+        user_context = ""
+        if bio:
+            user_context += f"\nUSER BIO (WHO AM I): {bio}"
+        if focus:
+            user_context += f"\nCURRENT FOCUS/GOAL: {focus}"
+            
+        user_content = f"{user_context}\n\nContacts List:\n{contacts_str}"
 
         try:
             response = await ai_service.llm_client.chat.completions.create(
@@ -63,40 +73,96 @@ class RecallService:
         """
         logger.info("Starting Active Recall process...")
         try:
-            # 1. Получаем всех пользователей
-            users_response = self.supabase.table("users").select("id").execute()
+            # 1. Получаем всех пользователей со всеми полями
+            users_response = self.supabase.table("users").select("*").execute()
             users = users_response.data
             
             if not users:
                 return
 
+            # Текущий день недели (0=Mon, 6=Sun)
+            now = datetime.datetime.now()
+            today_weekday = now.weekday()
+            current_date_str = now.strftime("%Y-%m-%d")
+            
             count = 0
             for user in users:
                 user_id = user['id']
+                
+                # Проверка настроек
+                rs = user.get('recall_settings') or {}
+                
+                # 1. Проверка Enabled
+                if not rs.get('enabled', True):
+                    continue
+                
+                # 2. Проверка Дня Недели
+                days = rs.get('days', [4])
+                if today_weekday not in days:
+                    continue
+                
+                # 3. Latch (Защелка): Не отправлять, если уже отправляли сегодня
+                last_sent = rs.get('last_sent_date')
+                if last_sent == current_date_str:
+                    continue
+                
+                # 4. Проверка Времени (С окном)
+                # Формат времени: "15:00"
+                user_time_str = rs.get('time', '15:00')
+                try:
+                    uh, um = map(int, user_time_str.split(':'))
+                    user_time = now.replace(hour=uh, minute=um, second=0, microsecond=0)
+                except Exception:
+                    user_time = now.replace(hour=15, minute=0, second=0, microsecond=0) # Default
+                
+                # Debug logs
+                logger.debug(f"Checking recall for user {user_id}. Now: {now}, Target: {user_time}")
+                
+                # Окно: [user_time, user_time + 15 min]
+                # Если сейчас 15:05, а юзер хотел 15:00 -> Отправляем.
+                # Если сейчас 14:59 -> Ждем.
+                # Если сейчас 15:20 -> Опоздали (но в следующий раз скорректируем частоту чека)
+                
+                diff_minutes = (now - user_time).total_seconds() / 60
+                
+                logger.debug(f"Diff minutes: {diff_minutes}")
+
+                # Допускаем отправку, если мы опоздали не более чем на 59 минут (в рамках часа)
+                # Или, если мы запускаем каждую минуту, то 0 <= diff <= 2.
+                # Но для надежности (вдруг бот лежал) берем окно 60 минут.
+                # Если юзер поставил 15:00, мы можем отправить в 15:00...15:59.
+                if not (0 <= diff_minutes < 60):
+                   logger.debug(f"Time mismatch for user {user_id}. Skipping.")
+                   continue
                 
                 # 2. Берем БАТЧ контактов (3-5 штук) для анализа
                 contacts = await self.get_random_contacts_for_user(user_id, limit=4)
                 if not contacts:
                     continue
 
-                # 3. Генерируем умный совет
-                message_text = await self.generate_recall_message(contacts)
+                # 3. Генерируем умный совет с учетом Bio и Focus
+                bio = user.get('bio')
+                focus = rs.get('focus')
+                message_text = await self.generate_recall_message(contacts, bio=bio, focus=focus)
                 
-                # 4. Отправляем
+                # 4. Отправляем и обновляем Latch
                 try:
-                    # Убираем заголовок "Случайный контакт", так как он теперь внутри генерации
                     await bot.send_message(chat_id=user_id, text=message_text)
                     count += 1
                     logger.info(f"Sent smart recall to {user_id}")
+                    
+                    # Обновляем last_sent_date в БД
+                    rs['last_sent_date'] = current_date_str
+                    await user_service.update_recall_settings(user_id, RecallSettings(**rs))
+                    
                 except Exception as e:
-                    logger.warning(f"Failed to send message to {user_id}: {e}")
+                    logger.warning(f"Failed to send message or update settings for {user_id}: {e}")
                 
                 await asyncio.sleep(0.5)
-                
+
             logger.info(f"Recall finished. Sent {count} messages.")
 
         except Exception as e:
             logger.error(f"Recall process failed: {e}")
 
 recall_service = RecallService()
-

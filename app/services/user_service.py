@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import List
+from typing import Any, List
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
-from app.schemas import UserCreate, UserInDB, UserSettings
+from app.schemas import RecallSettings, UserCreate, UserInDB, UserSettings
 from app.config import settings
 
 class UserService:
@@ -37,17 +37,25 @@ class UserService:
             logger.error(f"Error getting user: {e}")
             return None
 
-    async def update_settings(self, user_id: int, settings: UserSettings) -> bool:
+    async def update_user_field(self, user_id: int, field: str, value: Any) -> bool:
         try:
-            logger.info(f"Updating settings for {user_id}: {settings}")
             response = self.supabase.table("users")\
-                .update({"settings": settings.model_dump()})\
+                .update({field: value})\
                 .eq("id", user_id)\
                 .execute()
             return bool(response.data)
         except Exception as e:
-            logger.error(f"Error updating settings: {e}")
+            logger.error(f"Error updating user field {field}: {e}")
             return False
+
+    async def update_settings(self, user_id: int, settings: UserSettings) -> bool:
+        return await self.update_user_field(user_id, "settings", settings.model_dump())
+
+    async def update_recall_settings(self, user_id: int, settings: RecallSettings) -> bool:
+        return await self.update_user_field(user_id, "recall_settings", settings.model_dump())
+    
+    async def update_bio(self, user_id: int, bio: str) -> bool:
+        return await self.update_user_field(user_id, "bio", bio)
 
     async def accept_terms(self, user_id: int) -> bool:
         try:

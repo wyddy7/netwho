@@ -10,12 +10,21 @@ class UserSettings(BaseModel):
     confirm_delete: bool = True
     confirm_update: bool = True
 
+class RecallSettings(BaseModel):
+    enabled: bool = True
+    days: list[int] = [4]  # 0=Mon, 4=Fri. Default: Friday
+    time: str = "15:00"
+    focus: str | None = None
+    last_sent_date: str | None = None # YYYY-MM-DD
+
 class UserBase(BaseModel):
     username: str | None = None
     full_name: str
     is_premium: bool = False
     terms_accepted: bool = False
     settings: UserSettings = Field(default_factory=UserSettings)
+    recall_settings: RecallSettings = Field(default_factory=RecallSettings)
+    bio: str | None = None
 
 class UserCreate(UserBase):
     id: int  # Telegram ID
