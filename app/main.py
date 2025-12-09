@@ -49,20 +49,22 @@ async def main():
     
     from app.handlers import payments
     dp.include_router(payments.router)
+
+    from app.handlers import admin
+    dp.include_router(admin.router)
     
     dp.include_router(text.router) # Text handler (Generic) - Last priority
     
     # Middlewares (Order matters!)
     from app.middlewares.clear_state_on_command import ClearStateOnCommandMiddleware
-    from app.middlewares.legacy_trial import LegacyTrialMiddleware
     from app.middlewares.user_check import UserCheckMiddleware
     
     # Clear state on commands FIRST (highest priority)
     dp.message.middleware(ClearStateOnCommandMiddleware())
     # Then check/resurrect user
     dp.message.middleware(UserCheckMiddleware())
-    # Then legacy trial middleware
-    dp.message.middleware(LegacyTrialMiddleware())
+    # Legacy trial middleware removed (it caused issues with subscription abuse)
+
     
     # Хук на старт
     dp.startup.register(on_startup)
