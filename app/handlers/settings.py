@@ -41,7 +41,7 @@ async def get_settings_menu(user_id: int):
     
     # Add Buy Button if not Pro (or expiring soon)
     if not is_pro:
-         builder.button(text="💎 Купить Pro (100 ⭐️)", callback_data="buy_pro_callback")
+         builder.button(text="💎 Купить Pro (250 ⭐️)", callback_data="buy_pro_callback")
 
     builder.button(text="❌ Закрыть", callback_data="close_settings")
     builder.adjust(1)

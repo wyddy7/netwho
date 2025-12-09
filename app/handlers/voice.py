@@ -25,7 +25,7 @@ async def handle_voice(message: types.Message):
         await message.reply(
             "⏳ <b>Голосовое слишком длинное (лимит 30 сек).</b>\n\n"
             "В Pro-версии можно записывать целые лекции.\n"
-            "Нажми /buy_pro (100 ⭐️)."
+            "Нажми /buy_pro (250 ⭐️)."
         )
         return
     # -------------------

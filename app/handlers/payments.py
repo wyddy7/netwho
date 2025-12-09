@@ -26,10 +26,15 @@ async def buy_pro(message: Message):
     """
     await message.answer_invoice(
         title="NetWho Pro (1 Month)",
-        description="Безлимитные контакты, Умный Recall и чтение новостей.",
+        description=(
+            "NetWho Pro\n"
+            "<s>600 ⭐️</s> <b>250 ⭐️</b> (Early Bird Offer 🔥)\n\n"
+            "Цена для первых пользователей до релиза v1.0.\n"
+            "Безлимитные контакты, Умный Recall и чтение новостей."
+        ),
         payload="netwho_pro_month",
         currency="XTR",  # Telegram Stars
-        prices=[LabeledPrice(label="Pro Month", amount=100)], # 100 Stars
+        prices=[LabeledPrice(label="Pro Month (Early Bird)", amount=250)], # 250 Stars
         provider_token="" # Empty for Stars
     )
 
