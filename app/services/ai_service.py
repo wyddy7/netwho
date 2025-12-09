@@ -319,7 +319,7 @@ class AIService:
         # 3. Сохраняем сообщение Юзера в историю (один раз)
         await user_service.save_chat_message(user_id, "user", user_text)
 
-        max_steps = 5
+        max_steps = 10
         step_count = 0
         last_tool_list_result = None # Здесь будем хранить список контактов, если он был получен
 
@@ -519,7 +519,37 @@ class AIService:
                     "content": tool_result_content
                 })
 
-            return "Agent stopped (max steps reached)."
+            # --- Retry / Final Attempt Logic after Max Steps ---
+            logger.warning(f"Agent reached MAX STEPS ({max_steps}) for user {user_id}")
+            
+            # Добавляем системное сообщение с требованием завершить и объясниться
+            messages.append({
+                "role": "system",
+                "content": (
+                    "CRITICAL: You have reached the MAXIMUM NUMBER OF STEPS (infinite loop detected).\n"
+                    "STOP calling tools immediately.\n"
+                    "REPLY to the user in your persona style (e.g., 'Бля, я затупил и ушел в цикл...').\n"
+                    "Explain what you tried to do and ask for clarification."
+                )
+            })
+            
+            # Делаем финальный запрос без инструментов (force text)
+            final_response = await self.llm_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=messages,
+                # tools=None, # Не передаем инструменты, чтобы он не пытался их вызвать
+            )
+            
+            final_content = final_response.choices[0].message.content
+            if final_content:
+                await user_service.save_chat_message(user_id, "assistant", final_content)
+                return final_content
+            else:
+                return "⚠ Бот устал и прилег отдохнуть (Max Steps Error)."
+
+        except Exception as e:
+            logger.error(f"Router Agent failed: {e}")
+            return "Произошла ошибка (Agent Error)."
 
         except Exception as e:
             logger.error(f"Router Agent failed: {e}")
