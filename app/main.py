@@ -3,11 +3,13 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from app.config import settings
 from app.handlers import base, voice, text, settings as settings_handler
 from app.services.user_service import user_service
+from app.services.recall_service import recall_service
 
 # Твой ID для уведомлений (можно вынести в .env, но пока так)
 ADMIN_ID = 6108932752
@@ -47,6 +49,16 @@ async def main():
     # Хук на старт
     dp.startup.register(on_startup)
     
+    # Scheduler Setup
+    scheduler = AsyncIOScheduler()
+    # Пятничный "Случайный Кофе" в 15:00
+    scheduler.add_job(recall_service.process_recalls, "cron", day_of_week="fri", hour=15, args=[bot])
+    # ДЕБАГ: Раскомментируй, чтобы тестить раз в минуту
+    # scheduler.add_job(recall_service.process_recalls, "interval", minutes=1, args=[bot])
+    
+    scheduler.start()
+    logger.info("Scheduler started")
+
     await bot.delete_webhook(drop_pending_updates=True)
     
     try:

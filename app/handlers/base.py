@@ -75,6 +75,24 @@ async def cmd_help(message: types.Message):
     )
     await message.answer(text)
 
+from app.services.recall_service import recall_service
+
+@router.message(Command("recall"))
+async def cmd_recall_manual(message: types.Message):
+    """
+    Debug: Принудительный запуск напоминания для текущего юзера
+    """
+    await message.answer("🎲 Ищу повод для разговора...")
+    
+    contact = await recall_service.get_random_contact_for_user(message.from_user.id)
+    if not contact:
+        await message.answer("🤷‍♂️ Контактов нет или все заархивированы.")
+        return
+
+    msg = await recall_service.generate_recall_message(contact)
+    text = f"🎲 <b>Случайный контакт</b>\n\n{msg}"
+    await message.answer(text)
+
 @router.message(Command("delete_me"))
 async def cmd_delete_me(message: types.Message):
     builder = InlineKeyboardBuilder()

@@ -17,7 +17,10 @@ async def handle_voice(message: types.Message):
     user_id = message.from_user.id
     status_msg = await message.answer("🎧 Слушаю...")
     
-    ogg_path = f"voice_{user_id}_{message.message_id}.ogg"
+    # Создаем папку если нет (локально)
+    os.makedirs("temp_voice", exist_ok=True)
+    
+    ogg_path = os.path.join("temp_voice", f"voice_{user_id}_{message.message_id}.ogg")
     mp3_path = None
     
     try:
