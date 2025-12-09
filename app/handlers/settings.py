@@ -14,20 +14,10 @@ class SettingsStates(StatesGroup):
     waiting_for_focus = State()
     waiting_for_time = State()
 
-@router.callback_query(F.data == "open_settings")
-async def open_settings_callback(callback: types.CallbackQuery, state: FSMContext):
-    await cmd_settings(callback.message, state)
-    await callback.answer()
-
-@router.message(Command("settings"))
-async def cmd_settings(message: types.Message, state: FSMContext):
+async def get_settings_menu(user_id: int):
     """
-    Главное меню настроек.
+    Generates the text and markup for the main settings menu.
     """
-    # Очищаем любое активное состояние FSM при открытии настроек
-    await state.clear()
-    
-    user_id = message.from_user.id
     user = await user_service.get_user(user_id)
     is_pro = await user_service.is_pro(user_id)
     
@@ -56,7 +46,34 @@ async def cmd_settings(message: types.Message, state: FSMContext):
     builder.button(text="❌ Закрыть", callback_data="close_settings")
     builder.adjust(1)
     
-    await message.answer(text, reply_markup=builder.as_markup())
+    return text, builder.as_markup()
+
+@router.callback_query(F.data == "open_settings")
+async def open_settings_callback(callback: types.CallbackQuery, state: FSMContext):
+    # Очищаем состояние
+    await state.clear()
+    
+    # Используем ID пользователя, нажавшего кнопку, а не ID бота из сообщения
+    user_id = callback.from_user.id
+    text, reply_markup = await get_settings_menu(user_id)
+    
+    # Отправляем новым сообщением, так как это результат нажатия на кнопку "Настройки" в финальном сообщении
+    # (или можно редактировать, но обычно настройки открываются поверх)
+    # Если мы хотим поведение как /settings - то новое сообщение.
+    await callback.message.answer(text, reply_markup=reply_markup)
+    await callback.answer()
+
+@router.message(Command("settings"))
+async def cmd_settings(message: types.Message, state: FSMContext):
+    """
+    Главное меню настроек.
+    """
+    await state.clear()
+    
+    user_id = message.from_user.id
+    text, reply_markup = await get_settings_menu(user_id)
+    
+    await message.answer(text, reply_markup=reply_markup)
 
 # --- RECALL SETTINGS ---
 
@@ -337,16 +354,9 @@ async def set_rage_mode(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "settings_main")
 async def back_to_main(callback: types.CallbackQuery):
-    # Просто вызываем cmd_settings, но нужно передать Message, а у нас Callback
-    # Проще отредактировать текст
-    text = "⚙️ <b>Настройки NetWho</b>\n\nВыберите раздел:"
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🎲 Recall (Напоминания)", callback_data="settings_recall")
-    builder.button(text="✅ Approves (Подтверждения)", callback_data="settings_approves")
-    builder.button(text="📜 History (История)", callback_data="settings_history")
-    builder.button(text="❌ Закрыть", callback_data="close_settings")
-    builder.adjust(1)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    user_id = callback.from_user.id
+    text, reply_markup = await get_settings_menu(user_id)
+    await callback.message.edit_text(text, reply_markup=reply_markup)
 
 @router.callback_query(F.data == "close_settings")
 async def on_close(callback: types.CallbackQuery):

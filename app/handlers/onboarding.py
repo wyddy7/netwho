@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from loguru import logger
 
+from app.utils.chat_action import KeepTyping
 from app.states import OnboardingStates
 from app.services.user_service import user_service
 from app.services.ai_service import ai_service
@@ -213,16 +214,17 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
         await message.answer(f"💾 Записал: <b>{created_contact.name}</b>")
         
         # 3. MAGIC MOMENT: Generate Recall
-        # Explicit refresh: перечитываем пользователя из БД после обновления подписки
-        # чтобы получить актуальный статус (fix cache invalidation problem)
-        user = await user_service.get_user(user_id)
-        
-        # Генерируем сообщение именно для ЭТОГО контакта
-        recall_msg = await recall_service.generate_recall_message(
-            [created_contact.model_dump()], # Передаем как dict, а не Pydantic model
-            bio=user.bio, 
-            focus="Восстановление связи (Onboarding)"
-        )
+        async with KeepTyping(message.bot, message.chat.id):
+            # Explicit refresh: перечитываем пользователя из БД после обновления подписки
+            # чтобы получить актуальный статус (fix cache invalidation problem)
+            user = await user_service.get_user(user_id)
+            
+            # Генерируем сообщение именно для ЭТОГО контакта
+            recall_msg = await recall_service.generate_recall_message(
+                [created_contact.model_dump()], # Передаем как dict, а не Pydantic model
+                bio=user.bio, 
+                focus="Восстановление связи (Onboarding)"
+            )
         
         # ОТПРАВЛЯЕМ ВСЁ В ОДНОМ СООБЩЕНИИ, ЧТОБЫ ИЗБЕЖАТЬ СПАМА И ДУБЛЕЙ
         

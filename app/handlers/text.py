@@ -1,6 +1,7 @@
 from aiogram import Router, types, F
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
+from app.utils.chat_action import KeepTyping
 from app.services.ai_service import ai_service
 from app.services.search_service import search_service
 from app.services.user_service import user_service
@@ -163,59 +164,58 @@ async def handle_text(message: types.Message):
         # Пропускаем, пусть агент подтверждает или отменяет
         pass 
         
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-
-    # --- NEWS JACKING (Реакция на ссылки) ---
-    url = news_service.extract_url(user_text)
-    if url:
-        logger.info(f"Detected URL: {url}. Starting News-Jacking flow.")
-        
-        status_msg = await message.reply("👀 Читаю статью...")
-        
-        # 1. Скачиваем контент
-        article_text = await news_service.fetch_article_content(url)
-        if article_text:
-            # 2. Ищем, кому это может быть интересно
-            # Формируем поисковый запрос для Vector DB из заголовка/начала статьи
-            # (Можно попросить LLM сделать саммари для поиска, но для скорости берем первые 500 символов)
-            query_text = article_text[:500] 
+    async with KeepTyping(message.bot, message.chat.id):
+        # --- NEWS JACKING (Реакция на ссылки) ---
+        url = news_service.extract_url(user_text)
+        if url:
+            logger.info(f"Detected URL: {url}. Starting News-Jacking flow.")
             
-            # Ищем контакты, близкие по смыслу к статье
-            relevant_contacts = await search_service.search(query_text, user_id, limit=5)
+            status_msg = await message.reply("👀 Читаю статью...")
             
-            if relevant_contacts:
-                # 3. Генерируем "Connect" сообщение
-                # Используем recall_service для генерации совета, но с контекстом статьи
+            # 1. Скачиваем контент
+            article_text = await news_service.fetch_article_content(url)
+            if article_text:
+                # 2. Ищем, кому это может быть интересно
+                # Формируем поисковый запрос для Vector DB из заголовка/начала статьи
+                # (Можно попросить LLM сделать саммари для поиска, но для скорости берем первые 500 символов)
+                query_text = article_text[:500] 
                 
-                # Хак: используем generate_recall_message, но передаем статью как "focus"
-                user = await user_service.get_user(user_id)
-                bio = user.bio if user else None
+                # Ищем контакты, близкие по смыслу к статье
+                relevant_contacts = await search_service.search(query_text, user_id, limit=5)
                 
-                # Кастомизируем промпт "на лету" (или создадим отдельный метод, если нужно супер качество)
-                # Пока попробуем через существующий метод, передав статью в focus
-                focus_context = f"Found interesting article: {url}\nSummary: {article_text[:300]}...\nGoal: Suggest who to send this article to and why."
-                
-                advice = await recall_service.generate_recall_message(relevant_contacts, bio=bio, focus=focus_context)
-                
-                await status_msg.edit_text(
-                    f"🔗 <b>Анализ ссылки:</b>\n\n"
-                    f"{advice}"
-                )
-                return # Прерываем стандартный флоу, чтобы не запускать агента на ссылку
+                if relevant_contacts:
+                    # 3. Генерируем "Connect" сообщение
+                    # Используем recall_service для генерации совета, но с контекстом статьи
+                    
+                    # Хак: используем generate_recall_message, но передаем статью как "focus"
+                    user = await user_service.get_user(user_id)
+                    bio = user.bio if user else None
+                    
+                    # Кастомизируем промпт "на лету" (или создадим отдельный метод, если нужно супер качество)
+                    # Пока попробуем через существующий метод, передав статью в focus
+                    focus_context = f"Found interesting article: {url}\nSummary: {article_text[:300]}...\nGoal: Suggest who to send this article to and why."
+                    
+                    advice = await recall_service.generate_recall_message(relevant_contacts, bio=bio, focus=focus_context)
+                    
+                    await status_msg.edit_text(
+                        f"🔗 <b>Анализ ссылки:</b>\n\n"
+                        f"{advice}"
+                    )
+                    return # Прерываем стандартный флоу, чтобы не запускать агента на ссылку
+                else:
+                     await status_msg.edit_text("Прочитал, но не нашел в базе никого, кому это точно было бы интересно.")
+                     return
             else:
-                 await status_msg.edit_text("Прочитал, но не нашел в базе никого, кому это точно было бы интересно.")
-                 return
-        else:
-             await status_msg.edit_text("Не смог прочитать статью (Jina не справилась).")
-             # Fallback to standard agent flow if link fails
-    
-    # --- STANDARD AGENT FLOW ---
-    try:
-        response = await ai_service.run_router_agent(user_text, user_id)
-        await handle_agent_response(message, response)
-    except Exception as e:
-        logger.error(f"Text handler error: {e}")
-        await message.reply("Что-то пошло не так.")
+                 await status_msg.edit_text("Не смог прочитать статью (Jina не справилась).")
+                 # Fallback to standard agent flow if link fails
+        
+        # --- STANDARD AGENT FLOW ---
+        try:
+            response = await ai_service.run_router_agent(user_text, user_id)
+            await handle_agent_response(message, response)
+        except Exception as e:
+            logger.error(f"Text handler error: {e}")
+            await message.reply("Что-то пошло не так.")
 
 # --- CALLBACK HANDLERS ---
 

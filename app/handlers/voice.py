@@ -6,6 +6,7 @@ from app.services.audio_service import AudioService
 from app.services.ai_service import ai_service
 from app.handlers.text import handle_agent_response
 from app.services.user_service import user_service
+from app.utils.chat_action import KeepTyping
 
 router = Router()
 
@@ -57,11 +58,11 @@ async def handle_voice(message: types.Message):
         await status_msg.edit_text(f"🗣 <i>\"{transcribed_text}\"</i>")
         
         # 4. Отправляем текст в Единый Мозг (Router Agent)
-        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        response = await ai_service.run_router_agent(transcribed_text, user_id)
-        
-        # 5. Обрабатываем ответ агента (через общую функцию из text.py)
-        await handle_agent_response(message, response)
+        async with KeepTyping(message.bot, message.chat.id):
+            response = await ai_service.run_router_agent(transcribed_text, user_id)
+            
+            # 5. Обрабатываем ответ агента (через общую функцию из text.py)
+            await handle_agent_response(message, response)
         
     except Exception as e:
         logger.error(f"Voice pipeline error: {e}")
