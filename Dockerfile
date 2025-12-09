@@ -26,5 +26,8 @@ COPY . .
 RUN mkdir -p temp_voice
 
 # 7. Запускаем через uv run
-# Он сам подхватит виртуальное окружение, которое создал uv sync
-CMD ["uv", "run", "app/main.py"]
+# Добавляем текущую директорию в PYTHONPATH, чтобы uv/python видел модуль 'app'
+ENV PYTHONPATH=/app
+
+# Запускаем модуль app.main (точка вместо слеша)
+CMD ["uv", "run", "python", "-m", "app.main"]
