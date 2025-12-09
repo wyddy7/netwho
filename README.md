@@ -1,59 +1,65 @@
-# NetWho
+# NetWho Bot
 
-NetWho is an AI-powered personal network manager bot for Telegram. It helps you keep track of your contacts, suggests when to reconnect, and provides AI-driven insights.
+**AI-ассистент для нетворкинга.** Умная записная книжка, напоминания (Recall system) и генерация интро.
 
-## Features
+## 🛠 Стек
+*   **Python 3.13+**
+*   **Aiogram 3.x** (Telegram Bot API)
+*   **Supabase** (PostgreSQL + Auth)
+*   **OpenRouter / OpenAI** (LLM inference)
+*   **Groq** (Voice transcription)
+*   **APScheduler** (Background tasks)
 
-- **Smart Contact Management**: Save contacts via voice or text. AI extracts names, roles, and details.
-- **Recall System**: Automatically reminds you to reconnect with people you haven't spoken to in a while.
-- **News Jacking**: Send a link to an article, and NetWho will suggest which of your contacts might be interested.
-- **Voice Interface**: Full support for voice messages.
-- **Pro Mode**: Extended features and limits.
+## 🚀 Запуск (Docker)
 
-## Commands
+Единственный верный способ деплоя.
 
-### User Commands
+1.  **Создайте `.env`** (на основе `.env.example`):
+    ```bash
+    cp .env.example .env
+    ```
 
-- `/start` - Start or restart the bot (Onboarding).
-- `/settings` - Open settings menu (Timezone, Focus, etc.).
-- `/profile` - View your profile and stats.
-- `/recall` - Manually trigger a recall suggestion.
-- `/delete_me` - Delete all your data (Soft reset: subscription status is preserved).
-- `/help` - Show help message.
+2.  **Запустите контейнер**:
+    ```bash
+    docker compose up -d --build
+    ```
 
-### Admin Commands
+## ⚙️ Конфигурация (.env)
 
-*Available only to the configured ADMIN_ID.*
+Основные переменные для продакшена.
 
-- `/admin` - Show list of admin commands.
-- `/give_pro <user_id> <days>` - Grant Pro subscription to a user for N days.
-- `/revoke_pro <user_id>` - Revoke Pro subscription (expire immediately).
-- `/check_user <user_id>` - View user details (Bio, Subscription status).
+| Переменная | Обязательно | Описание |
+| :--- | :---: | :--- |
+| `BOT_TOKEN` | ✅ | Токен от [@BotFather](https://t.me/BotFather) |
+| `SUPABASE_URL` | ✅ | URL проекта Supabase |
+| `SUPABASE_KEY` | ✅ | **Service Role** ключ (для доступа к БД) |
+| `OPENROUTER_API_KEY` | ✅ | Ключ OpenRouter (или OpenAI) |
+| `ADMIN_ID` | ✅ | Telegram ID владельца (для админ-команд) |
+| `GROQ_API_KEY` | ❌ | Для распознавания ГС (если не задан — войсы игнорируются) |
+| `LLM_MODEL` | ❌ | Дефолт: `openai/gpt-4o-mini` |
 
-## Setup & Deployment
+## 📦 База данных и Миграции
 
-1. **Clone the repository**
-2. **Configure Environment**:
-   Copy `.env.example` to `.env` and fill in:
-   - `BOT_TOKEN`: Telegram Bot Token
-   - `SUPABASE_URL`: Supabase Project URL
-   - `SUPABASE_KEY`: Supabase Service Role Key
-   - `OPENROUTER_API_KEY`: API Key for LLM
-   - `ADMIN_ID`: Telegram User ID of the administrator
-3. **Run with Docker**:
-   ```bash
-   docker-compose up --build -d
-   ```
+Проект использует **Supabase** (PostgreSQL).
+*   SQL-миграции находятся в папке `/migrations`.
+*   **Применение**: Вручную через Supabase Dashboard (SQL Editor) или psql. Автоматического наката миграций при старте нет.
 
-## Development
+## 🔧 Администрирование
 
-- Built with `aiogram 3.x` (Python).
-- Database: Supabase (PostgreSQL).
-- AI: OpenAI / OpenRouter.
+**Админ-команды** (доступны `ADMIN_ID`):
+*   `/check_user <user_id>` — Проверить статус подписки, триала и лимитов пользователя.
+*   `/give_pro <user_id> <days>` — Выдать Premium на N дней.
+*   `/revoke_pro <user_id>` — Аннулировать подписку.
+*   `/admin` — Список всех команд.
 
-## Subscription Logic
+**Полезные скрипты** (в папке `/scripts`):
+*   `python scripts/check_db.py` — Проверка подключения к БД.
+*   `python scripts/revoke_trial.py` — Массовый отзыв триалов (если нужно).
+*   `python scripts/test_ai.py` — Тест LLM коннектора.
 
-- **New Users**: Get a 3-day trial automatically upon first registration.
-- **Returning Users**: If a user deletes their account (`/delete_me`) and returns, they **do not** get a new trial. Their previous subscription status is preserved.
-- **Legacy Users**: No automatic trials for old users. Admins can grant trials manually using `/grant_pro`.
+## 💡 Лимиты (Freemium)
 
+Настраиваются в `app/config.py` (или переопределяются в env, если добавить их туда).
+*   **Trial**: 3 дня при первой регистрации.
+*   **Free**: 10 контактов, 30 сек войсы.
+*   **Pro**: Безлимит.
