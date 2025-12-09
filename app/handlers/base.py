@@ -82,16 +82,18 @@ async def cmd_recall_manual(message: types.Message):
     """
     Debug: Принудительный запуск напоминания для текущего юзера
     """
-    await message.answer("🎲 Ищу повод для разговора...")
+    await message.answer("🎲 Анализирую социальный граф...")
     
-    contact = await recall_service.get_random_contact_for_user(message.from_user.id)
-    if not contact:
+    # Теперь берем пачку контактов
+    contacts = await recall_service.get_random_contacts_for_user(message.from_user.id, limit=4)
+    
+    if not contacts:
         await message.answer("🤷‍♂️ Контактов нет или все заархивированы.")
         return
 
-    msg = await recall_service.generate_recall_message(contact)
-    text = f"🎲 <b>Случайный контакт</b>\n\n{msg}"
-    await message.answer(text)
+    # Генерируем умное сообщение (оно уже отформатировано)
+    msg = await recall_service.generate_recall_message(contacts)
+    await message.answer(msg)
 
 @router.message(Command("delete_me"))
 async def cmd_delete_me(message: types.Message):
