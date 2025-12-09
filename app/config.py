@@ -2,6 +2,7 @@ import os
 import sys
 from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 # Настройка логгера
 logger.remove()
@@ -32,7 +33,16 @@ class Settings(BaseSettings):
 
     # App Settings
     CHAT_HISTORY_DEPTH: int = 10
+    ADMIN_ID: int = 0 # Default to 0 or some placeholder, requires .env update
     
+    @field_validator("ADMIN_ID", mode="before")
+    @classmethod
+    def parse_admin_id(cls, v):
+        if isinstance(v, str) and not v.isdigit():
+            logger.warning(f"Invalid ADMIN_ID in .env: '{v}'. Defaulting to 0. Please set a numeric ID.")
+            return 0
+        return v
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

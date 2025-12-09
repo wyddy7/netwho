@@ -46,6 +46,10 @@ async def main():
     dp.include_router(settings_handler.router)
     dp.include_router(profile.router)
     dp.include_router(voice.router)
+    
+    from app.handlers import payments
+    dp.include_router(payments.router)
+    
     dp.include_router(text.router) # Text handler (Generic) - Last priority
     
     # Хук на старт

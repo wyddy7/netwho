@@ -57,6 +57,42 @@ class UserService:
     async def update_bio(self, user_id: int, bio: str) -> bool:
         return await self.update_user_field(user_id, "bio", bio)
 
+    async def is_pro(self, user_id: int) -> bool:
+        """
+        Check if user has an active Pro subscription.
+        """
+        user = await self.get_user(user_id)
+        if not user or not user.pro_until:
+            return False
+        
+        # Check if pro_until is in the future
+        # Note: user.pro_until is timezone aware (TIMESTAMPTZ)
+        return user.pro_until > datetime.now(user.pro_until.tzinfo)
+
+    async def update_subscription(self, user_id: int, days: int) -> bool:
+        """
+        Extend or set subscription.
+        """
+        from datetime import timedelta, timezone
+        
+        try:
+            current_user = await self.get_user(user_id)
+            if not current_user:
+                return False
+            
+            now = datetime.now(timezone.utc)
+            
+            # If already Pro, extend. If not, start from now.
+            if current_user.pro_until and current_user.pro_until > now:
+                new_date = current_user.pro_until + timedelta(days=days)
+            else:
+                new_date = now + timedelta(days=days)
+                
+            return await self.update_user_field(user_id, "pro_until", new_date.isoformat())
+        except Exception as e:
+            logger.error(f"Error updating subscription: {e}")
+            return False
+
     async def accept_terms(self, user_id: int) -> bool:
         try:
             response = self.supabase.table("users")\

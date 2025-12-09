@@ -6,6 +6,7 @@ from app.services.search_service import search_service
 from app.services.user_service import user_service
 from app.services.news_service import news_service
 from app.services.recall_service import recall_service
+from app.services.subscription_service import check_limits, get_limit_message
 from app.schemas import (
     ContactCreate, ContactDraft, UserSettings, 
     ContactDeleteAsk, ContactUpdateAsk, ActionConfirmed, ActionCancelled
@@ -44,6 +45,12 @@ async def handle_agent_response(message: types.Message, response):
         
         # 2. ДРАФТ СОЗДАНИЯ (Нужно подтверждение)
         elif isinstance(response, ContactDraft):
+            # Check limits
+            if not await check_limits(user_id):
+                limit_msg = await get_limit_message(user_id)
+                await message.reply(limit_msg)
+                return
+
             pending_actions[user_id] = {"type": "add", "data": response}
             
             text = (
@@ -122,6 +129,12 @@ async def handle_agent_response(message: types.Message, response):
 
         # 6. УСПЕХ (Rage Mode или авто-сохранение)
         elif isinstance(response, ContactCreate):
+            # Check limits
+            if not await check_limits(user_id):
+                limit_msg = await get_limit_message(user_id)
+                await message.reply(limit_msg)
+                return
+
             res_text = (
                 f"✅ <b>Записал:</b> {response.name}\n\n"
                 f"📝 {response.summary}"

@@ -25,6 +25,7 @@ class UserBase(BaseModel):
     settings: UserSettings = Field(default_factory=UserSettings)
     recall_settings: RecallSettings = Field(default_factory=RecallSettings)
     bio: str | None = None
+    pro_until: datetime | None = None
 
 class UserCreate(UserBase):
     id: int  # Telegram ID

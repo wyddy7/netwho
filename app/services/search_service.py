@@ -58,6 +58,17 @@ class SearchService:
             logger.error(f"Error deleting contact: {e}")
             raise
     
+    async def count_contacts(self, user_id: int) -> int:
+        try:
+            response = self.supabase.table("contacts")\
+                .select("*", count="exact", head=True)\
+                .eq("user_id", user_id)\
+                .execute()
+            return response.count or 0
+        except Exception as e:
+            logger.error(f"Error counting contacts: {e}")
+            return 0
+
     async def find_similar_contacts_by_name(self, name: str, user_id: int) -> list[ContactInDB]:
         """
         Ищет контакты с похожим именем (ILike).

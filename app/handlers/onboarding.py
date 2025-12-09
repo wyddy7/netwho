@@ -55,6 +55,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     # Register/Update user
     try:
+        # Check if user exists BEFORE upsert
+        existing_user = await user_service.get_user(user.id)
+        
         user_data = UserCreate(
             id=user.id,
             username=user.username,
@@ -62,8 +65,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
         )
         await user_service.upsert_user(user_data)
         
+        # Grant Trial for NEW users
+        if not existing_user:
+            await user_service.update_subscription(user.id, 3)
+            logger.info(f"Granted 3-day trial to new user {user.id}")
+        
         # Check if already onboarded (if bio exists)
-        existing_user = await user_service.get_user(user.id)
+        # We check existing_user (state before upsert) or fetch fresh
         if existing_user and existing_user.bio:
             await message.answer(
                 f"С возвращением, {user.full_name}! 👋\n"
@@ -81,6 +89,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         f"Йо, {user.full_name}! Я <b>NetWho</b>. 👋\n\n"
         "Я твоя вторая память: помогаю не проебать важные знакомства "
         "и сам нахожу поводы написать людям.\n\n"
+        "🎁 <b>Тебе доступен Pro-режим на 3 дня (тест-драйв).</b>\n\n"
         "Давай настроимся за 30 секунд?"
     )
     

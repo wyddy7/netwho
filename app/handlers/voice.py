@@ -5,6 +5,7 @@ from loguru import logger
 from app.services.audio_service import AudioService
 from app.services.ai_service import ai_service
 from app.handlers.text import handle_agent_response
+from app.services.user_service import user_service
 
 router = Router()
 
@@ -15,6 +16,19 @@ async def handle_voice(message: types.Message):
     Voice -> STT -> Router Agent -> Action
     """
     user_id = message.from_user.id
+
+    # --- Limit Check ---
+    is_pro = await user_service.is_pro(user_id)
+    duration = message.voice.duration
+    if not is_pro and duration > 30:
+        await message.reply(
+            "⏳ <b>Голосовое слишком длинное (лимит 30 сек).</b>\n\n"
+            "В Pro-версии можно записывать целые лекции.\n"
+            "Нажми /buy_pro (100 ⭐️)."
+        )
+        return
+    # -------------------
+
     status_msg = await message.answer("🎧 Слушаю...")
     
     # Создаем папку если нет (локально)
