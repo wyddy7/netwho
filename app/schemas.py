@@ -47,9 +47,11 @@ class ContactMeta(BaseModel):
     needs: list[str] = Field(default_factory=list)
 
 class ContactExtracted(BaseModel):
-    name: str
-    summary: str
-    meta: ContactMeta
+    action: str = "save" # "save" or "ignore"
+    reason: str | None = None # "command_detected"
+    name: str | None = None
+    summary: str | None = None
+    meta: ContactMeta = Field(default_factory=ContactMeta)
 
 class ContactCreate(BaseModel):
     user_id: int

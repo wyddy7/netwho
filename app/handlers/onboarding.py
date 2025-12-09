@@ -169,6 +169,16 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
     try:
         extracted = await ai_service.extract_contact_info(text)
         
+        # Check if it's a command/ignore
+        if extracted.action == "ignore":
+            await message.answer(
+                "🤔 <b>Это похоже на команду, а не на контакт.</b>\n\n"
+                "Мы сейчас в режиме настройки. Просто напиши <i>описание человека</i>.\n"
+                "Например: <i>'Олег, дизайнер, делает сайты'</i>.\n\n"
+                "Попробуй еще раз:"
+            )
+            return
+
         # 2. Save Contact (Force New)
         full_text = f"{extracted.name} {extracted.summary} {extracted.meta}"
         embedding = await ai_service.get_embedding(full_text)
@@ -197,14 +207,18 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
             focus="Восстановление связи (Onboarding)"
         )
         
-        await message.answer(
-            "🔥 <b>Магия:</b>\n"
+        # ОТПРАВЛЯЕМ ВСЁ В ОДНОМ СООБЩЕНИИ, ЧТОБЫ ИЗБЕЖАТЬ СПАМА И ДУБЛЕЙ
+        
+        final_text = (
+            f"🔥 <b>Магия:</b>\n"
             "Я нашел идеальный повод написать ему прямо сейчас.\n\n"
-            "👀 <b>Твой ход:</b>"
+            f"{recall_msg}\n\n"
+            "🎉 <b>Настройка завершена!</b>\n"
+            "Теперь просто скидывай мне всё подряд — контакты, мысли, ссылки.\n"
+            "Я сам буду напоминать о важных людях (раз в неделю).\n\n"
+            "👇 Меню управления:"
         )
-        
-        await message.answer(recall_msg)
-        
+
         # Final Onboarding Message with Buttons
         builder = InlineKeyboardBuilder()
         builder.button(text="👤 Профиль", callback_data="open_profile")
@@ -212,13 +226,7 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
         builder.button(text="🎲 Вспомнить кого-то", callback_data="recall_manual")
         builder.adjust(2) # 2 кнопки в ряду, последняя одна
 
-        await message.answer(
-            "<b>🎉 Настройка завершена!</b>\n\n"
-            "Теперь просто скидывай мне всё подряд — контакты, мысли, ссылки.\n"
-            "Я сам буду напоминать о важных людях (раз в неделю).\n\n"
-            "👇 Меню управления:",
-            reply_markup=builder.as_markup()
-        )
+        await message.answer(final_text, reply_markup=builder.as_markup())
         
         await state.clear()
         
