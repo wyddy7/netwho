@@ -106,8 +106,7 @@ class UserService:
 
     async def delete_user_full(self, user_id: int) -> bool:
         try:
-            logger.warning(f"DELETING ALL DATA for user {user_id}")
-            # Supabase usually has Cascade Delete on Foreign Keys, but let's be safe
+            logger.warning(f"RESETTING DATA for user {user_id} (Subscription preserved)")
             
             # 1. Delete Contacts (if not cascaded)
             try:
@@ -121,8 +120,19 @@ class UserService:
             except Exception as e:
                 logger.error(f"Error deleting chat history: {e}")
 
-            # 3. Delete User
-            response = self.supabase.table("users").delete().eq("id", user_id).execute()
+            # 3. Wipe User Data (BUT KEEP ID & SUBSCRIPTION)
+            # We do NOT delete the user row anymore to prevent subscription abuse (re-registering for trial).
+            # Instead, we clear bio, settings, etc.
+            
+            updates = {
+                "bio": None,
+                "settings": UserSettings().model_dump(),
+                "recall_settings": RecallSettings().model_dump(),
+                # We can reset terms too if needed, but main trigger for onboarding is empty bio
+                "terms_accepted": False 
+            }
+            
+            response = self.supabase.table("users").update(updates).eq("id", user_id).execute()
             return bool(response.data)
         except Exception as e:
             logger.error(f"Error deleting user: {e}")

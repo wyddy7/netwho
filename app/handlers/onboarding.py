@@ -88,11 +88,24 @@ async def cmd_start(message: types.Message, state: FSMContext):
         return
 
     # Start Onboarding
+    
+    # Determine subscription status message
+    sub_text = ""
+    if not existing_user:
+        sub_text = "🎁 <b>Тебе доступен Pro-режим на 3 дня (тест-драйв).</b>"
+    else:
+        # Check if actually Pro (could be old pro, or expired)
+        is_pro = await user_service.is_pro(user.id)
+        if is_pro:
+            sub_text = "✨ <b>Твой Pro-режим активен.</b>"
+        else:
+            sub_text = "📉 <b>Ты сейчас на Free-тарифе.</b>"
+
     text = (
         f"Йо, {user.full_name}! Я <b>NetWho</b>. 👋\n\n"
         "Я твоя вторая память: помогаю не проебать важные знакомства "
         "и сам нахожу поводы написать людям.\n\n"
-        "🎁 <b>Тебе доступен Pro-режим на 3 дня (тест-драйв).</b>\n\n"
+        f"{sub_text}\n\n"
         "Давай настроимся за 30 секунд?"
     )
     
