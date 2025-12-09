@@ -1,8 +1,10 @@
+from datetime import datetime, timezone, timedelta
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from app.utils.chat_action import KeepTyping
+from app.config import settings
 
 from app.services.user_service import user_service
 from app.schemas import RecallSettings
@@ -30,11 +32,38 @@ async def cmd_recall_manual(message: types.Message):
     """
     Debug: Принудительный запуск напоминания для текущего юзера
     """
+    user_id = message.from_user.id
+    
+    # --- FREEMIUM CHECK ---
+    user = await user_service.get_user(user_id)
+    rs = user.recall_settings if user and user.recall_settings else RecallSettings()
+    is_pro = await user_service.is_pro(user_id)
+
+    if not is_pro:
+        now = datetime.now(timezone.utc)
+        if rs.last_manual_recall:
+            # Ensure timezone awareness if pydantic parsed it as aware
+            last_run = rs.last_manual_recall
+            if last_run.tzinfo is None:
+                last_run = last_run.replace(tzinfo=timezone.utc)
+                
+            if now - last_run < timedelta(hours=24):
+                await message.answer(
+                    f"⏳ <b>Лимит Free-версии:</b> 1 ручной запуск в сутки.\n\n"
+                    f"В Pro-версии можно вызывать recall сколько угодно.\n"
+                    f"👉 /buy_pro ({settings.PRICE_MONTH_STARS} ⭐️)"
+                )
+                return
+
+        # Update timestamp (we do it BEFORE sending to prevent spamming while generating)
+        rs.last_manual_recall = now
+        await user_service.update_recall_settings(user_id, rs)
+    # ----------------------
+
     async with KeepTyping(message.bot, message.chat.id):
         # Получаем контекст пользователя (Bio, Focus)
-        user = await user_service.get_user(message.from_user.id)
+        # user already fetched
         bio = user.bio if user else None
-        rs = user.recall_settings if user and user.recall_settings else RecallSettings()
         focus = rs.focus
 
         # Теперь берем пачку контактов
@@ -58,13 +87,34 @@ async def on_recall_manual_callback(callback: types.CallbackQuery):
     """
     Обработчик кнопки "Вспомнить кого-то" - просто вызывает команду /recall
     """
+    user_id = callback.from_user.id
+    
+    # --- FREEMIUM CHECK ---
+    user = await user_service.get_user(user_id)
+    rs = user.recall_settings if user and user.recall_settings else RecallSettings()
+    is_pro = await user_service.is_pro(user_id)
+
+    if not is_pro:
+        now = datetime.now(timezone.utc)
+        if rs.last_manual_recall:
+            last_run = rs.last_manual_recall
+            if last_run.tzinfo is None:
+                last_run = last_run.replace(tzinfo=timezone.utc)
+                
+            if now - last_run < timedelta(hours=24):
+                await callback.answer("⏳ Лимит Free: 1 раз в 24ч", show_alert=True)
+                return
+
+        rs.last_manual_recall = now
+        await user_service.update_recall_settings(user_id, rs)
+    # ----------------------
+
     await callback.answer()
     
     async with KeepTyping(callback.message.bot, callback.message.chat.id):
         # Получаем контекст пользователя (Bio, Focus)
-        user = await user_service.get_user(callback.from_user.id)
+        # user already fetched
         bio = user.bio if user else None
-        rs = user.recall_settings if user and user.recall_settings else RecallSettings()
         focus = rs.focus
 
         # Теперь берем пачку контактов
@@ -85,6 +135,14 @@ async def on_recall_manual_callback(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "recall_reroll")
 async def on_recall_reroll(callback: types.CallbackQuery):
+    # --- FREEMIUM CHECK ---
+    user_id = callback.from_user.id
+    is_pro = await user_service.is_pro(user_id)
+    if not is_pro:
+        await callback.answer("🔒 Reroll (перегенерация) доступен только в Pro-версии.", show_alert=True)
+        return
+    # ----------------------
+
     await callback.message.edit_reply_markup(reply_markup=None) # Убираем кнопку у старого
     
     async with KeepTyping(callback.message.bot, callback.message.chat.id):

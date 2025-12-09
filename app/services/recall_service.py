@@ -120,8 +120,22 @@ class RecallService:
                 if not rs.get('enabled', True):
                     continue
                 
-                # 2. Проверка Дня Недели
+                # 2. Проверка Дня Недели (User settings)
                 days = rs.get('days', [4])
+
+                # --- FREEMIUM CHECK (1 Day Limit) ---
+                is_pro = await user_service.is_pro(user_id)
+                if not is_pro:
+                    # Allow only 1 day per week.
+                    # If user has multiple days set (e.g. from before), we accept only the FIRST one.
+                    active_days = sorted(days)
+                    if active_days:
+                        allowed_day = active_days[0]
+                        if today_weekday != allowed_day:
+                             logger.debug(f"Free user {user_id} has days {days}, but allowed only {allowed_day}. Today {today_weekday}. Skip.")
+                             continue
+                # ------------------------------------
+                
                 if today_weekday not in days:
                     logger.debug(f"Day mismatch for user {user_id}. Today: {today_weekday}, Target: {days}")
                     continue
@@ -177,7 +191,14 @@ class RecallService:
                 
                 # 4. Отправляем и обновляем Latch
                 try:
-                    await bot.send_message(chat_id=user_id, text=message_text)
+                    # Add Freemium footer
+                    footer = ""
+                    if not is_pro:
+                        footer = "\n\n📅 <i>В Pro-версии я могу напоминать о людях каждый день.</i>"
+                    
+                    final_text = message_text + footer
+                    await bot.send_message(chat_id=user_id, text=final_text)
+
                     count += 1
                     logger.info(f"Sent smart recall to {user_id}")
                     

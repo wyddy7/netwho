@@ -1,4 +1,5 @@
 import json
+import re
 from typing import List, Union
 from openai import AsyncOpenAI
 from loguru import logger
@@ -341,6 +342,14 @@ class AIService:
                 # Если нет вызова инструментов - это финальный текстовый ответ
                 if not msg.tool_calls:
                     final_text = msg.content
+                    
+                    # --- CLEANUP RAW TOOL CALL LEAKS ---
+                    if final_text:
+                        # Удаляем все, что похоже на xml-теги инструментов, если они просочились в текст
+                        final_text = re.sub(r"<tool_calls_begin>.*", "", final_text, flags=re.DOTALL).strip()
+                        final_text = re.sub(r"<tool_code>.*", "", final_text, flags=re.DOTALL).strip()
+                    # -----------------------------------
+
                     # Сохраняем в БД
                     if final_text:
                         await user_service.save_chat_message(user_id, "assistant", final_text)
@@ -508,9 +517,12 @@ class AIService:
                     if is_pro and user_data.pro_until:
                         # Convert to readable format
                         expiry_str = user_data.pro_until.strftime("%d.%m.%Y %H:%M")
-                        tool_result_content = f"User HAS Active Pro subscription. Expires on: {expiry_str}"
+                        tool_result_content = f"У пользователя активна Pro подписка. Истекает: {expiry_str}"
+                    elif is_pro and user_data.trial_ends_at:
+                        expiry_str = user_data.trial_ends_at.strftime("%d.%m.%Y %H:%M")
+                        tool_result_content = f"У пользователя активен Pro Trial (тестовый период). Истекает: {expiry_str}"
                     else:
-                        tool_result_content = "User does NOT have active Pro subscription. Suggest to buy using /buy_pro."
+                        tool_result_content = "У пользователя НЕТ активной Pro подписки. Предложи купить через /buy_pro."
 
                 # Добавляем результат инструмента в messages для следующего шага LLM
                 messages.append({

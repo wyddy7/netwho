@@ -4,6 +4,7 @@ from aiogram.filters import Command
 from loguru import logger
 
 from app.services.user_service import user_service
+from app.services.subscription_service import run_amnesty_logic
 from app.config import settings
 
 router = Router()
@@ -24,15 +25,23 @@ async def buy_pro(message: Message):
     """
     Отправляет инвойс на оплату Pro-подписки (Telegram Stars).
     """
+    # 1. Marketing Message (Sandwich method)
+    await message.answer(
+        f"🚀 <b>Early Bird Offer</b>\n\n"
+        f"<s>{settings.PRICE_ANCHOR_STARS} ⭐️</s> → <b>{settings.PRICE_MONTH_STARS} ⭐️</b>\n"
+        "<i>(Цена для первых пользователей до релиза v1.0)</i>"
+    )
+
+    # 2. Invoice
     await message.answer_invoice(
-        title="Early Bird Offer 🔥 (1 Month)",
+        title="NetWho Pro (1 Month)",
         description=(
-            "Безлимитные контакты, Умный Recall и чтение новостей. Цена для первых пользователей до релиза v1.0.\n\n"
-            "250 ⭐️ (Скидка -58% от 600)"
+            "Безлимитные контакты, Умный Recall и чтение новостей.\n"
+            "Инвестиция в твой социальный капитал."
         ),
         payload="netwho_pro_month",
         currency="XTR",  # Telegram Stars
-        prices=[LabeledPrice(label="Pro Month (Early Bird)", amount=250)], # 250 Stars
+        prices=[LabeledPrice(label="Pro Month (Early Bird)", amount=settings.PRICE_MONTH_STARS)], 
         provider_token="" # Empty for Stars
     )
 
@@ -84,13 +93,11 @@ async def revoke_pro_command(message: Message):
 
         target_user_id = int(args[1])
         
-        # Set pro_until to None or past
-        # Since update_subscription logic adds time, we need a specific 'set_subscription' or manually update field
-        # Let's just update the field to NULL via user_service
-        success = await user_service.update_user_field(target_user_id, "pro_until", None)
+        # Use service method to clear BOTH pro_until and trial_ends_at
+        success = await user_service.revoke_subscription(target_user_id)
         
         if success:
-            await message.answer(f"✅ Pro подписка отозвана у юзера {target_user_id}.")
+            await message.answer(f"✅ Pro подписка (и Trial) отозвана у юзера {target_user_id}.")
         else:
             await message.answer("❌ Ошибка при обновлении (пользователь не найден?).")
             
@@ -140,4 +147,25 @@ async def give_pro_command(message: Message):
     except Exception as e:
         logger.error(f"Error giving pro: {e}")
         await message.answer(f"Error: {e}")
+
+@router.message(Command("broadcast_amnesty"))
+async def broadcast_amnesty_command(message: Message):
+    """
+    Рассылка амнистии (триал 3 дня) всем пользователям.
+    Admin only.
+    """
+    if message.from_user.id != settings.ADMIN_ID:
+        return
+        
+    await message.answer("🚀 Запускаю процесс амнистии (рассылка всем)...")
+    
+    # Run in background to not block handler? 
+    # Or just await it since it is admin command.
+    # Logic inside logic function processes all users.
+    try:
+        await run_amnesty_logic(message.bot)
+        await message.answer("✅ Амнистия завершена.")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+
 

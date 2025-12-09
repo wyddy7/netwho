@@ -33,6 +33,17 @@ class Settings(BaseSettings):
 
     # App Settings
     CHAT_HISTORY_DEPTH: int = 10
+    
+    # Freemium / Monetization Settings
+    TRIAL_DAYS: int = 3
+    FREE_CONTACTS_LIMIT: int = 10
+    FREE_VOICE_LIMIT_SEC: int = 30
+    FREE_NEWS_JACKS_LIMIT: int = 3
+    
+    # Costs (Stars)
+    PRICE_MONTH_STARS: int = 250
+    PRICE_ANCHOR_STARS: int = 600
+    
     ADMIN_ID: int = 0 # Default to 0 or some placeholder, requires .env update
     
     @field_validator("ADMIN_ID", mode="before")

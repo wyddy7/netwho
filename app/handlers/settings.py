@@ -22,15 +22,26 @@ async def get_settings_menu(user_id: int):
     is_pro = await user_service.is_pro(user_id)
     
     # Status Text
-    if is_pro and user.pro_until:
-        expiry = user.pro_until.strftime("%d.%m.%Y")
-        sub_status = f"⭐️ <b>PRO Active</b> (до {expiry})"
+    if is_pro:
+        if user.pro_until:
+            expiry = user.pro_until.strftime("%d.%m.%Y")
+            sub_status = f"⭐️ <b>PRO Active</b> (до {expiry})"
+        elif user.trial_ends_at:
+            expiry = user.trial_ends_at.strftime("%d.%m.%Y %H:%M")
+            sub_status = f"🎁 <b>Pro Trial</b> (до {expiry})"
+        else:
+            # Should not happen if is_pro is True, but fallback
+            sub_status = "⭐️ <b>PRO Active</b>"
     else:
         sub_status = "Free Plan"
 
+    # Effective History Depth
+    history_depth = app_settings.CHAT_HISTORY_DEPTH if is_pro else 3
+
     text = (
         "⚙️ <b>Настройки NetWho</b>\n\n"
-        f"Статус: {sub_status}\n\n"
+        f"Статус: {sub_status}\n"
+        f"Глубина памяти: <b>{history_depth} сообщений</b>\n\n"
         "Выберите раздел:"
     )
     
@@ -41,7 +52,7 @@ async def get_settings_menu(user_id: int):
     
     # Add Buy Button if not Pro (or expiring soon)
     if not is_pro:
-         builder.button(text="💎 Купить Pro (250 ⭐️)", callback_data="buy_pro_callback")
+         builder.button(text=f"💎 Купить Pro ({app_settings.PRICE_MONTH_STARS} ⭐️)", callback_data="buy_pro_callback")
 
     builder.button(text="❌ Закрыть", callback_data="close_settings")
     builder.adjust(1)
@@ -82,6 +93,7 @@ async def show_recall_settings(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user = await user_service.get_user(user_id)
     rs = user.recall_settings if user else RecallSettings()
+    is_pro = await user_service.is_pro(user_id)
     
     status_icon = "✅" if rs.enabled else "❌"
     focus_text = rs.focus if rs.focus else "<i>Общий (Без фильтра)</i>"
@@ -99,6 +111,9 @@ async def show_recall_settings(callback: types.CallbackQuery):
         f"Фокус: {focus_text}\n\n"
         "<i>Нажми на день, чтобы включить/выключить его.</i>"
     )
+    
+    if not is_pro:
+        text += "\n\n⚠️ <i>В Free-версии можно выбрать только 1 день в неделю.</i>"
     
     builder = InlineKeyboardBuilder()
     
@@ -147,6 +162,12 @@ async def on_recall_day(callback: types.CallbackQuery):
     if day_idx in rs.days:
         rs.days.remove(day_idx)
     else:
+        # Check limit
+        is_pro = await user_service.is_pro(user_id)
+        if not is_pro and len(rs.days) >= 1:
+            await callback.answer("🔒 Лимит Free: только 1 день. Отключите другой день сначала.", show_alert=True)
+            return
+
         rs.days.append(day_idx)
         rs.days.sort()
         
@@ -282,7 +303,10 @@ async def show_history(callback: types.CallbackQuery):
     """
     Подменю History.
     """
-    depth = app_settings.CHAT_HISTORY_DEPTH
+    user_id = callback.from_user.id
+    is_pro = await user_service.is_pro(user_id)
+    depth = app_settings.CHAT_HISTORY_DEPTH if is_pro else 3
+    
     text = (
         "📜 <b>Настройки Истории</b>\n\n"
         f"Глубина контекста: <b>{depth} сообщений</b>.\n"

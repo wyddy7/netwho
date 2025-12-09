@@ -8,6 +8,7 @@ from app.services.user_service import user_service
 from app.services.news_service import news_service
 from app.services.recall_service import recall_service
 from app.services.subscription_service import check_limits, get_limit_message
+from app.config import settings
 from app.schemas import (
     ContactCreate, ContactDraft, UserSettings, 
     ContactDeleteAsk, ContactUpdateAsk, ActionConfirmed, ActionCancelled
@@ -170,6 +171,21 @@ async def handle_text(message: types.Message):
         if url:
             logger.info(f"Detected URL: {url}. Starting News-Jacking flow.")
             
+            # Check Limits for News Jacking
+            is_pro = await user_service.is_pro(user_id)
+            
+            if not is_pro:
+                user_db = await user_service.get_user(user_id)
+                current_count = user_db.news_jacks_count
+                if current_count >= settings.FREE_NEWS_JACKS_LIMIT:
+                    await message.reply(
+                        f"😎 <b>Я знаю, кому это скинуть, но топливо кончилось.</b>\n\n"
+                        f"Лимит Free-версии: {settings.FREE_NEWS_JACKS_LIMIT} анализа ссылок.\n"
+                        f"Pro-версия снимет лимиты за {settings.PRICE_MONTH_STARS}⭐️.\n\n"
+                        "👉 /buy_pro"
+                    )
+                    return
+            
             status_msg = await message.reply("👀 Читаю статью...")
             
             # 1. Скачиваем контент
@@ -197,9 +213,17 @@ async def handle_text(message: types.Message):
                     
                     advice = await recall_service.generate_recall_message(relevant_contacts, bio=bio, focus=focus_context)
                     
+                    # Increment counter and add footer
+                    limit_note = ""
+                    if not is_pro:
+                        new_count = await user_service.increment_news_jacks(user_id)
+                        remaining = max(0, settings.FREE_NEWS_JACKS_LIMIT - new_count)
+                        limit_note = f"\n\n<i>🔥 Осталось бесплатных анализов: {remaining}</i>"
+
                     await status_msg.edit_text(
                         f"🔗 <b>Анализ ссылки:</b>\n\n"
                         f"{advice}"
+                        f"{limit_note}"
                     )
                     return # Прерываем стандартный флоу, чтобы не запускать агента на ссылку
                 else:

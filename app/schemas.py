@@ -16,6 +16,7 @@ class RecallSettings(BaseModel):
     time: str = "15:00"
     focus: str | None = None
     last_sent_date: str | None = None # YYYY-MM-DD
+    last_manual_recall: datetime | None = None # For rate limiting manual /recall
 
 class UserBase(BaseModel):
     username: str | None = None
@@ -26,6 +27,9 @@ class UserBase(BaseModel):
     recall_settings: RecallSettings = Field(default_factory=RecallSettings)
     bio: str | None = None
     pro_until: datetime | None = None
+    trial_ends_at: datetime | None = None
+    news_jacks_count: int = 0
+    referral_source: str | None = None
 
 class UserCreate(UserBase):
     id: int  # Telegram ID

@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from loguru import logger
 
+from app.config import settings
 from app.utils.chat_action import KeepTyping
 from app.states import OnboardingStates
 from app.services.user_service import user_service
@@ -68,8 +69,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
         
         # Grant Trial for NEW users
         if not existing_user:
-            await user_service.update_subscription(user.id, 3)
-            logger.info(f"Granted 3-day trial to new user {user.id}")
+            await user_service.grant_trial(user.id, settings.TRIAL_DAYS)
+            logger.info(f"Granted {settings.TRIAL_DAYS}-day trial to new user {user.id}")
             # Explicit refresh: перечитываем пользователя после обновления подписки
             # чтобы получить актуальный статус (fix cache invalidation problem)
             existing_user = await user_service.get_user(user.id)
@@ -92,11 +93,12 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     # Determine subscription status message
     sub_text = ""
+    is_pro = await user_service.is_pro(user.id)
+    
     if not existing_user:
-        sub_text = "🎁 <b>Тебе доступен Pro-режим на 3 дня (тест-драйв).</b>"
+        sub_text = f"🎁 <b>Тебе доступен Pro-режим на {settings.TRIAL_DAYS} дня (тест-драйв).</b>"
     else:
         # Check if actually Pro (could be old pro, or expired)
-        is_pro = await user_service.is_pro(user.id)
         if is_pro:
             sub_text = "✨ <b>Твой Pro-режим активен.</b>"
         else:

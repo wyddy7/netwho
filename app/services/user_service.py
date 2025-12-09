@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any, List
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
@@ -49,33 +49,42 @@ class UserService:
             return False
 
     async def update_settings(self, user_id: int, settings: UserSettings) -> bool:
-        return await self.update_user_field(user_id, "settings", settings.model_dump())
+        return await self.update_user_field(user_id, "settings", settings.model_dump(mode='json'))
 
     async def update_recall_settings(self, user_id: int, settings: RecallSettings) -> bool:
-        return await self.update_user_field(user_id, "recall_settings", settings.model_dump())
+        return await self.update_user_field(user_id, "recall_settings", settings.model_dump(mode='json'))
     
     async def update_bio(self, user_id: int, bio: str) -> bool:
         return await self.update_user_field(user_id, "bio", bio)
 
     async def is_pro(self, user_id: int) -> bool:
         """
-        Check if user has an active Pro subscription.
+        Check if user has an active Pro subscription OR active Trial.
         """
         user = await self.get_user(user_id)
-        if not user or not user.pro_until:
+        if not user:
             return False
         
-        # Check if pro_until is in the future
-        # Note: user.pro_until is timezone aware (TIMESTAMPTZ)
-        return user.pro_until > datetime.now(user.pro_until.tzinfo)
+        now = datetime.now(timezone.utc)
+        
+        # 1. Check Paid Subscription
+        if user.pro_until and user.pro_until > now:
+            logger.debug(f"User {user_id} is PRO (Paid until {user.pro_until})")
+            return True
+            
+        # 2. Check Trial
+        if user.trial_ends_at and user.trial_ends_at > now:
+            logger.debug(f"User {user_id} is PRO (Trial until {user.trial_ends_at})")
+            return True
+        
+        logger.debug(f"User {user_id} is FREE (Trial ends: {user.trial_ends_at}, Pro until: {user.pro_until}, Now: {now})")
+        return False
 
     async def update_subscription(self, user_id: int, days: int) -> bool:
         """
         Extend or set subscription.
         Also updates is_premium flag based on pro_until date.
         """
-        from datetime import timedelta, timezone
-        
         try:
             current_user = await self.get_user(user_id)
             if not current_user:
@@ -110,14 +119,16 @@ class UserService:
 
     async def revoke_subscription(self, user_id: int) -> bool:
         """
-        Revoke subscription by clearing pro_until.
-        We rely on pro_until date for all logic, so clearing it effectively removes Pro.
+        Revoke subscription by clearing pro_until AND trial_ends_at.
         """
         try:
             # Just clear the date. 
-            # is_pro() checks `if not user.pro_until: return False`, so this is sufficient.
             response = self.supabase.table("users")\
-                .update({"pro_until": None, "is_premium": False})\
+                .update({
+                    "pro_until": None, 
+                    "trial_ends_at": None, # Also revoke trial
+                    "is_premium": False
+                })\
                 .eq("id", user_id)\
                 .execute()
             
@@ -125,6 +136,44 @@ class UserService:
         except Exception as e:
             logger.error(f"Error revoking subscription: {e}")
             return False
+            
+    async def grant_trial(self, user_id: int, days: int = None) -> bool:
+        """
+        Grant trial period.
+        """
+        if days is None:
+            days = settings.TRIAL_DAYS
+            
+        try:
+            now = datetime.now(timezone.utc)
+            trial_end = now + timedelta(days=days)
+            
+            response = self.supabase.table("users")\
+                .update({"trial_ends_at": trial_end.isoformat()})\
+                .eq("id", user_id)\
+                .execute()
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error granting trial: {e}")
+            return False
+
+    async def increment_news_jacks(self, user_id: int) -> int:
+        """
+        Increment news_jacks_count and return new value.
+        Doing this via fetch+update is prone to race conditions, 
+        but Supabase client usually doesn't expose atomic increment easily without RPC.
+        For MVP this is fine.
+        """
+        try:
+            user = await self.get_user(user_id)
+            if not user: return 0
+            
+            new_count = user.news_jacks_count + 1
+            await self.update_user_field(user_id, "news_jacks_count", new_count)
+            return new_count
+        except Exception as e:
+            logger.error(f"Error incrementing news jacks: {e}")
+            return 999
 
     async def accept_terms(self, user_id: int) -> bool:
         try:
@@ -174,9 +223,16 @@ class UserService:
     async def get_chat_history(self, user_id: int) -> List[dict]:
         """
         Получает историю чата для формирования контекста.
+        Учитывает Pro-статус для определения глубины контекста.
         """
         try:
-            limit = settings.CHAT_HISTORY_DEPTH
+            is_pro = await self.is_pro(user_id)
+            
+            if is_pro:
+                limit = settings.CHAT_HISTORY_DEPTH # 10-20
+            else:
+                limit = 3 # "Короткая память" для Free
+                
             # Вызываем RPC функцию
             response = self.supabase.rpc("get_chat_history", {
                 "p_user_id": user_id,

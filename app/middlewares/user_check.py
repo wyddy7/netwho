@@ -4,6 +4,7 @@ from aiogram.types import Message
 from loguru import logger
 from app.services.user_service import user_service
 from app.schemas import UserCreate
+from app.config import settings
 
 class UserCheckMiddleware(BaseMiddleware):
     async def __call__(
@@ -37,7 +38,7 @@ class UserCheckMiddleware(BaseMiddleware):
             await user_service.upsert_user(user_data)
             
             # Immediately grant trial here to avoid double messaging via LegacyTrialMiddleware
-            await user_service.update_subscription(user.id, 3)
+            await user_service.grant_trial(user.id, settings.TRIAL_DAYS)
             
             # Send Unified Welcome Back message
             try:
@@ -45,7 +46,7 @@ class UserCheckMiddleware(BaseMiddleware):
                     "👋 <b>С возвращением, Бро!</b>\n\n"
                     "Вижу, ты удалялся, но я тебя помню (ладно, профиль создал заново).\n\n"
                     "🎁 <b>Кстати, подгон:</b>\n"
-                    "Выдал тебе <b>3 дня Pro</b> за счет заведения. Теперь я умею читать твои ссылки и давать умные советы.\n\n"
+                    f"Выдал тебе <b>{settings.TRIAL_DAYS} дня Pro</b> за счет заведения. Теперь я умею читать твои ссылки и давать умные советы.\n\n"
                     "👇 Давай сразу к делу: <b>напиши, кто ты сейчас и кого ищем?</b>\n"
                     "<i>(Или нажми /start, если хочешь по классике)</i>"
                 )

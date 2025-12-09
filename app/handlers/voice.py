@@ -7,6 +7,7 @@ from app.services.ai_service import ai_service
 from app.handlers.text import handle_agent_response
 from app.services.user_service import user_service
 from app.utils.chat_action import KeepTyping
+from app.config import settings
 
 router = Router()
 
@@ -23,9 +24,9 @@ async def handle_voice(message: types.Message):
     duration = message.voice.duration
     if not is_pro and duration > 30:
         await message.reply(
-            "⏳ <b>Голосовое слишком длинное (лимит 30 сек).</b>\n\n"
+            f"⏳ <b>Голосовое слишком длинное (лимит 30 сек).</b>\n\n"
             "В Pro-версии можно записывать целые лекции.\n"
-            "Нажми /buy_pro (250 ⭐️)."
+            f"Нажми /buy_pro ({settings.PRICE_MONTH_STARS} ⭐️)."
         )
         return
     # -------------------
