@@ -69,6 +69,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
         if not existing_user:
             await user_service.update_subscription(user.id, 3)
             logger.info(f"Granted 3-day trial to new user {user.id}")
+            # Explicit refresh: перечитываем пользователя после обновления подписки
+            # чтобы получить актуальный статус (fix cache invalidation problem)
+            existing_user = await user_service.get_user(user.id)
         
         # Check if already onboarded (if bio exists)
         # We check existing_user (state before upsert) or fetch fresh
@@ -197,7 +200,8 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
         await message.answer(f"💾 Записал: <b>{created_contact.name}</b>")
         
         # 3. MAGIC MOMENT: Generate Recall
-        # Получаем user bio для контекста
+        # Explicit refresh: перечитываем пользователя из БД после обновления подписки
+        # чтобы получить актуальный статус (fix cache invalidation problem)
         user = await user_service.get_user(user_id)
         
         # Генерируем сообщение именно для ЭТОГО контакта
