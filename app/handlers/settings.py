@@ -14,13 +14,33 @@ class SettingsStates(StatesGroup):
     waiting_for_focus = State()
     waiting_for_time = State()
 
+@router.callback_query(F.data == "open_settings")
+async def open_settings_callback(callback: types.CallbackQuery, state: FSMContext):
+    await cmd_settings(callback.message, state)
+    await callback.answer()
+
 @router.message(Command("settings"))
-async def cmd_settings(message: types.Message):
+async def cmd_settings(message: types.Message, state: FSMContext):
     """
     Главное меню настроек.
     """
+    # Очищаем любое активное состояние FSM при открытии настроек
+    await state.clear()
+    
+    user_id = message.from_user.id
+    user = await user_service.get_user(user_id)
+    is_pro = await user_service.is_pro(user_id)
+    
+    # Status Text
+    if is_pro and user.pro_until:
+        expiry = user.pro_until.strftime("%d.%m.%Y")
+        sub_status = f"⭐️ <b>PRO Active</b> (до {expiry})"
+    else:
+        sub_status = "Free Plan"
+
     text = (
         "⚙️ <b>Настройки NetWho</b>\n\n"
+        f"Статус: {sub_status}\n\n"
         "Выберите раздел:"
     )
     
@@ -28,6 +48,11 @@ async def cmd_settings(message: types.Message):
     builder.button(text="🎲 Recall (Напоминания)", callback_data="settings_recall")
     builder.button(text="✅ Approves (Подтверждения)", callback_data="settings_approves")
     builder.button(text="📜 History (История)", callback_data="settings_history")
+    
+    # Add Buy Button if not Pro (or expiring soon)
+    if not is_pro:
+         builder.button(text="💎 Купить Pro (100 ⭐️)", callback_data="buy_pro_callback")
+
     builder.button(text="❌ Закрыть", callback_data="close_settings")
     builder.adjust(1)
     
@@ -113,17 +138,21 @@ async def on_recall_day(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "recall_focus_edit")
 async def on_recall_focus_edit(callback: types.CallbackQuery, state: FSMContext):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отмена", callback_data="cancel_focus_input")
+    
     await callback.message.edit_text(
         "🎯 <b>Настройка Фокуса</b>\n\n"
         "Напиши тему или категорию людей, о которых ты хочешь получать напоминания.\n"
         "Например: <i>'Инвесторы', 'IT-директора', 'Друзья со школы'</i>.\n"
-        "Или напиши <b>'-'</b> чтобы сбросить фокус.",
-        reply_markup=None
+        "Или напиши <b>'-'</b> чтобы сбросить фокус.\n\n"
+        "<i>Используй /settings или /cancel чтобы выйти.</i>",
+        reply_markup=builder.as_markup()
     )
     await state.set_state(SettingsStates.waiting_for_focus)
     await callback.answer()
 
-@router.message(SettingsStates.waiting_for_focus)
+@router.message(SettingsStates.waiting_for_focus, ~F.text.startswith("/"))
 async def on_focus_entered(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text.strip()
@@ -145,17 +174,21 @@ async def on_focus_entered(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "recall_time_edit")
 async def on_recall_time_edit(callback: types.CallbackQuery, state: FSMContext):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ Отмена", callback_data="cancel_time_input")
+    
     await callback.message.edit_text(
         "⏰ <b>Настройка Времени</b>\n\n"
         "Во сколько присылать напоминания? (МСК)\n"
         "Напиши время в формате <b>ЧЧ:ММ</b>.\n"
-        "Например: <i>09:00</i>, <i>18:30</i>.",
-        reply_markup=None
+        "Например: <i>09:00</i>, <i>18:30</i>.\n\n"
+        "<i>Используй /settings или /cancel чтобы выйти.</i>",
+        reply_markup=builder.as_markup()
     )
     await state.set_state(SettingsStates.waiting_for_time)
     await callback.answer()
 
-@router.message(SettingsStates.waiting_for_time)
+@router.message(SettingsStates.waiting_for_time, ~F.text.startswith("/"))
 async def on_time_entered(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text.strip()
@@ -318,3 +351,29 @@ async def back_to_main(callback: types.CallbackQuery):
 @router.callback_query(F.data == "close_settings")
 async def on_close(callback: types.CallbackQuery):
     await callback.message.delete()
+
+# --- Cancel Handlers ---
+
+@router.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    """
+    Отмена текущего действия и выход из состояния FSM.
+    """
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+        await message.answer("❌ Действие отменено.")
+    else:
+        await message.answer("Нет активных действий для отмены.")
+
+@router.callback_query(F.data == "cancel_focus_input")
+async def cancel_focus_input(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("❌ Ввод фокуса отменен.")
+    await callback.answer()
+
+@router.callback_query(F.data == "cancel_time_input")
+async def cancel_time_input(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("❌ Ввод времени отменен.")
+    await callback.answer()

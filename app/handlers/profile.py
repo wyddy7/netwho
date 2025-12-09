@@ -10,6 +10,11 @@ router = Router()
 class ProfileStates(StatesGroup):
     waiting_for_bio = State()
 
+@router.callback_query(F.data == "open_profile")
+async def open_profile_callback(callback: types.CallbackQuery):
+    await cmd_profile(callback.message)
+    await callback.answer()
+
 @router.message(Command("profile"))
 async def cmd_profile(message: types.Message):
     """
@@ -38,6 +43,34 @@ async def cmd_profile(message: types.Message):
     builder.adjust(1)
     
     await message.answer(text, reply_markup=builder.as_markup())
+
+@router.message(Command("delete_me"))
+async def cmd_delete_me(message: types.Message):
+    """
+    Полное удаление аккаунта (GDPR).
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💀 Да, удалить всё", callback_data="confirm_delete_account")
+    builder.button(text="Нет, я передумал", callback_data="close_profile") # Re-use generic close
+    builder.adjust(1)
+    
+    await message.answer(
+        "⚠️ <b>ВНИМАНИЕ! УДАЛЕНИЕ АККАУНТА</b> ⚠️\n\n"
+        "Вы собираетесь удалить ВСЕ свои данные (контакты, историю, настройки, подписку).\n"
+        "Это действие <b>необратимо</b>.\n\n"
+        "Вы уверены?",
+        reply_markup=builder.as_markup()
+    )
+
+@router.callback_query(F.data == "confirm_delete_account")
+async def confirm_delete_account(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    try:
+        await user_service.delete_user_full(user_id)
+        await state.clear()
+        await callback.message.edit_text("💀 <b>Аккаунт удален.</b>\n\nНадеюсь, ты нашел то, что искал. Прощай!")
+    except Exception as e:
+        await callback.message.edit_text(f"Ошибка удаления: {e}")
 
 @router.callback_query(F.data == "edit_bio")
 async def on_edit_bio(callback: types.CallbackQuery, state: FSMContext):

@@ -10,6 +10,14 @@ router = Router()
 
 # --- Payment Handlers ---
 
+@router.callback_query(F.data == "buy_pro_callback")
+async def buy_pro_callback(callback: types.CallbackQuery):
+    """
+    Callback wrapper for buying pro.
+    """
+    await buy_pro(callback.message)
+    await callback.answer()
+
 @router.message(Command("buy_pro"))
 @router.message(F.text == "💎 Купить Pro")
 async def buy_pro(message: Message):
@@ -55,6 +63,39 @@ async def success_payment(message: Message):
     )
 
 # --- Admin Handlers ---
+
+@router.message(Command("revoke_pro"))
+async def revoke_pro_command(message: Message):
+    """
+    Забрать Pro у пользователя (Admin only).
+    Usage: /revoke_pro <user_id>
+    """
+    if message.from_user.id != settings.ADMIN_ID:
+        return
+
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await message.answer("Usage: /revoke_pro &lt;user_id&gt;")
+            return
+
+        target_user_id = int(args[1])
+        
+        # Set pro_until to None or past
+        # Since update_subscription logic adds time, we need a specific 'set_subscription' or manually update field
+        # Let's just update the field to NULL via user_service
+        success = await user_service.update_user_field(target_user_id, "pro_until", None)
+        
+        if success:
+            await message.answer(f"✅ Pro подписка отозвана у юзера {target_user_id}.")
+        else:
+            await message.answer("❌ Ошибка при обновлении (пользователь не найден?).")
+            
+    except ValueError:
+        await message.answer("ID должен быть числом.")
+    except Exception as e:
+        logger.error(f"Error revoking pro: {e}")
+        await message.answer(f"Error: {e}")
 
 @router.message(Command("give_pro"))
 async def give_pro_command(message: Message):

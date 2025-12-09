@@ -10,6 +10,7 @@ from app.schemas import (
 )
 from app.prompts_loader import get_prompt
 
+# Fixed schema syntax
 TOOLS_SCHEMA = [
     {
         "type": "function",
@@ -108,6 +109,18 @@ TOOLS_SCHEMA = [
                     }
                 },
                 "required": ["contact_id", "text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_subscription",
+            "description": "Проверить статус подписки пользователя (есть ли Pro и когда истекает).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
             }
         }
     }
@@ -487,6 +500,17 @@ class AIService:
                         else:
                             await search_service.update_contact(contact_id, user_id, updates)
                             tool_result_content = f"Contact '{extracted.name}' updated."
+
+                elif fn_name == "check_subscription":
+                    is_pro = await user_service.is_pro(user_id)
+                    user_data = await user_service.get_user(user_id)
+                    
+                    if is_pro and user_data.pro_until:
+                        # Convert to readable format
+                        expiry_str = user_data.pro_until.strftime("%d.%m.%Y %H:%M")
+                        tool_result_content = f"User HAS Active Pro subscription. Expires on: {expiry_str}"
+                    else:
+                        tool_result_content = "User does NOT have active Pro subscription. Suggest to buy using /buy_pro."
 
                 # Добавляем результат инструмента в messages для следующего шага LLM
                 messages.append({

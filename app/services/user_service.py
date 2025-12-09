@@ -107,6 +107,21 @@ class UserService:
     async def delete_user_full(self, user_id: int) -> bool:
         try:
             logger.warning(f"DELETING ALL DATA for user {user_id}")
+            # Supabase usually has Cascade Delete on Foreign Keys, but let's be safe
+            
+            # 1. Delete Contacts (if not cascaded)
+            try:
+                self.supabase.table("contacts").delete().eq("user_id", user_id).execute()
+            except Exception as e:
+                logger.error(f"Error deleting contacts: {e}")
+
+            # 2. Delete Chat History
+            try:
+                self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
+            except Exception as e:
+                logger.error(f"Error deleting chat history: {e}")
+
+            # 3. Delete User
             response = self.supabase.table("users").delete().eq("id", user_id).execute()
             return bool(response.data)
         except Exception as e:
@@ -138,6 +153,11 @@ class UserService:
         Сохраняет сообщение в историю.
         """
         try:
+            # Check if user exists, if not - skip saving history to avoid FK violation
+            # Or simpler: Just try insert, if fails on FK - ignore.
+            # But let's be cleaner: check existence is expensive on every log.
+            
+            # Better approach: Just try-catch the specific error.
             data = {
                 "user_id": user_id,
                 "role": role,
@@ -145,7 +165,11 @@ class UserService:
             }
             self.supabase.table("chat_history").insert(data).execute()
         except Exception as e:
-            logger.error(f"Failed to save chat message: {e}")
+            # Suppress Foreign Key violation error (happens if user deleted account or not started yet)
+            if "violates foreign key constraint" in str(e):
+                logger.warning(f"Skipped saving chat log for non-existent user {user_id}")
+            else:
+                logger.error(f"Failed to save chat message: {e}")
 
     async def clear_history(self, user_id: int):
         """

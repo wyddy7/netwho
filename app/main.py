@@ -52,6 +52,18 @@ async def main():
     
     dp.include_router(text.router) # Text handler (Generic) - Last priority
     
+    # Middlewares (Order matters!)
+    from app.middlewares.clear_state_on_command import ClearStateOnCommandMiddleware
+    from app.middlewares.legacy_trial import LegacyTrialMiddleware
+    from app.middlewares.user_check import UserCheckMiddleware
+    
+    # Clear state on commands FIRST (highest priority)
+    dp.message.middleware(ClearStateOnCommandMiddleware())
+    # Then check/resurrect user
+    dp.message.middleware(UserCheckMiddleware())
+    # Then legacy trial middleware
+    dp.message.middleware(LegacyTrialMiddleware())
+    
     # Хук на старт
     dp.startup.register(on_startup)
     

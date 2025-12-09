@@ -42,7 +42,7 @@ class Settings(BaseSettings):
             logger.warning(f"Invalid ADMIN_ID in .env: '{v}'. Defaulting to 0. Please set a numeric ID.")
             return 0
         return v
-
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
