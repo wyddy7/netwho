@@ -221,10 +221,9 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
 
         # Final Onboarding Message with Buttons
         builder = InlineKeyboardBuilder()
-        builder.button(text="👤 Профиль", callback_data="open_profile")
         builder.button(text="⚙️ Настройки", callback_data="open_settings")
         builder.button(text="🎲 Вспомнить кого-то", callback_data="recall_manual")
-        builder.adjust(2) # 2 кнопки в ряду, последняя одна
+        builder.adjust(2) # 2 кнопки в ряду
 
         await message.answer(final_text, reply_markup=builder.as_markup())
         

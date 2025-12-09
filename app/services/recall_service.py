@@ -118,6 +118,7 @@ class RecallService:
                 # 2. Проверка Дня Недели
                 days = rs.get('days', [4])
                 if today_weekday not in days:
+                    logger.debug(f"Day mismatch for user {user_id}. Today: {today_weekday}, Target: {days}")
                     continue
                 
                 # 3. Latch (Защелка): Не отправлять, если уже отправляли сегодня
@@ -157,7 +158,11 @@ class RecallService:
                 # 2. Берем БАТЧ контактов (3-5 штук) для анализа
                 contacts = await self.get_random_contacts_for_user(user_id, limit=4)
                 if not contacts:
-                    # Если контактов нет совсем, то скипаем (в Onboarding мы форсим создание первого)
+                    # Если контактов нет, а напоминание нужно отправить -> шлем алерт один раз
+                    # Но чтобы не спамить, можно проверить, отправляли ли мы уже такой алерт?
+                    # Пока просто скипнем, но с логом.
+                    logger.warning(f"User {user_id} has no contacts for recall.")
+                    # TODO: Можно отправить сообщение юзеру: "Добавьте контакты, чтобы получать напоминания!"
                     continue
 
                 # 3. Генерируем умный совет с учетом Bio и Focus
