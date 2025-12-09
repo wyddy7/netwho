@@ -1,66 +1,15 @@
 from aiogram import Router, types, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 
 from app.services.user_service import user_service
-from app.schemas import UserCreate, RecallSettings
+from app.schemas import RecallSettings
+from app.services.recall_service import recall_service
 
 router = Router()
 
-@router.message(CommandStart())
-async def cmd_start(message: types.Message):
-    """
-    Хендлер команды /start
-    """
-    user = message.from_user
-    if not user:
-        return
-
-    logger.info(f"User {user.id} started bot")
-
-    # Регистрируем пользователя
-    try:
-        user_data = UserCreate(
-            id=user.id,
-            username=user.username,
-            full_name=user.full_name
-        )
-        await user_service.upsert_user(user_data)
-    except Exception as e:
-        logger.error(f"Failed to register user: {e}")
-        await message.answer("⚠ Произошла ошибка при регистрации. Попробуйте позже.")
-        return
-
-    # Текст приветствия и оферты
-    text = (
-        f"Привет, {user.full_name}! 👋\n\n"
-        "Я <b>NetWho</b> — твоя вторая память для нетворкинга.\n"
-        "Отправляй мне голосовые заметки о встречах, людях и событиях.\n\n"
-        "🔍 Я запомню всё и найду по первому запросу.\n\n"
-        "<i>Продолжая использовать бота, вы соглашаетесь с условиями обработки данных. "
-        "Мы не передаем ваши данные третьим лицам.</i>"
-    )
-
-    # Кнопка согласия (опционально, можно просто считать старт согласием)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Принимаю условия", callback_data="accept_terms")
-    
-    await message.answer(text, reply_markup=builder.as_markup())
-
-@router.callback_query(F.data == "accept_terms")
-async def on_terms_accept(callback: types.CallbackQuery):
-    """Обработка кнопки принятия условий"""
-    await callback.answer("Спасибо!")
-    
-    try:
-        await user_service.accept_terms(callback.from_user.id)
-        await callback.message.edit_text(
-            "✅ <b>Отлично! Мы готовы.</b>\n\n"
-            "Просто запиши голосовое сообщение: <i>'Встретил Диму, он дизайнер, ищет работу...'</i>"
-        )
-    except Exception as e:
-        logger.error(f"Error accepting terms: {e}")
+# Note: CommandStart is now handled in app/handlers/onboarding.py
 
 @router.message(Command("help"))
 async def cmd_help(message: types.Message):
@@ -70,12 +19,10 @@ async def cmd_help(message: types.Message):
         "🔎 <b>Поиск:</b> Напиши <i>'Кто такой Дима?'</i> или <i>'Найди дизайнеров'</i>.\n"
         "🗑 <b>Удаление:</b> Напиши <i>'Удали Диму'</i> (я уточню, кого именно).\n\n"
         "⚙ <b>Команды:</b>\n"
-        "/start - Перезапустить бота\n"
+        "/start - Перезапустить бота (Onboarding)\n"
         "/delete_me - Удалить все мои данные"
     )
     await message.answer(text)
-
-from app.services.recall_service import recall_service
 
 @router.message(Command("recall"))
 async def cmd_recall_manual(message: types.Message):
@@ -150,4 +97,3 @@ async def on_delete_confirm(callback: types.CallbackQuery):
 @router.callback_query(F.data == "cancel_delete")
 async def on_delete_cancel(callback: types.CallbackQuery):
     await callback.message.delete()
-

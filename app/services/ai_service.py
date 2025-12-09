@@ -257,6 +257,31 @@ class AIService:
             logger.error(f"Rerank failed: {e}")
             return candidates
 
+    async def extract_user_bio(self, text: str) -> str:
+        """
+        Извлекает Bio и интересы пользователя из текста.
+        """
+        system_prompt = (
+            "You are an expert profile analyzer. "
+            "Extract a concise professional bio and interests from the user's text. "
+            "Format the output as a short 1-2 sentence summary in Russian. "
+            "Example input: 'Я продакт менеджер, делаю стартап в крипте, ищу инвесторов' "
+            "Example output: 'Product Manager в крипто-стартапе. Интересы: инвестиции, блокчейн.'"
+        )
+        
+        try:
+            response = await self.llm_client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text}
+                ]
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Bio extraction failed: {e}")
+            return text  # Fallback to raw text
+
     async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft, ContactDeleteAsk, ActionConfirmed, ActionCancelled]:
         """
         Агент-маршрутизатор с памятью и поддержкой многошаговых вызовов (Loop).

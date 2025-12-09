@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from app.config import settings
-from app.handlers import base, voice, text, settings as settings_handler, profile
+from app.handlers import base, voice, text, settings as settings_handler, profile, onboarding
 from app.services.user_service import user_service
 from app.services.recall_service import recall_service
 
@@ -40,12 +40,13 @@ async def main():
     
     dp = Dispatcher()
     
-    # Регистрация роутеров
+    # Регистрация роутеров (Порядок важен!)
+    dp.include_router(onboarding.router) # Onboarding (Start + States) - First priority
     dp.include_router(base.router)
     dp.include_router(settings_handler.router)
     dp.include_router(profile.router)
     dp.include_router(voice.router)
-    dp.include_router(text.router)
+    dp.include_router(text.router) # Text handler (Generic) - Last priority
     
     # Хук на старт
     dp.startup.register(on_startup)

@@ -15,16 +15,35 @@ class RecallService:
         self.supabase = get_supabase()
 
     async def get_random_contacts_for_user(self, user_id: int, limit: int = 3):
+        """
+        Теперь выбирает не чисто случайно, а с приоритетом "давно забытых".
+        """
         try:
-            response = self.supabase.rpc("get_random_contacts", {
-                "p_user_id": user_id, 
-                "p_limit": limit
-            }).execute()
-            if response.data:
-                return response.data
-            return []
+            # 1. Сначала пробуем получить самые старые по last_interaction (NULLS FIRST)
+            # Мы делаем это простым запросом, а не RPC, чтобы контролировать сортировку.
+            # (Хотя RPC тоже можно было бы обновить)
+            
+            response = self.supabase.table("contacts")\
+                .select("id, name, summary, meta, last_interaction, created_at")\
+                .eq("user_id", user_id)\
+                .eq("is_archived", False)\
+                .order("last_interaction", nullsfirst=True)\
+                .limit(20)\
+                .execute()
+                
+            candidates = response.data
+            
+            if not candidates:
+                return []
+                
+            # 2. Из топ-20 "кандидатов на забвение" выбираем случайных N
+            import random
+            selected = random.sample(candidates, min(len(candidates), limit))
+            
+            return selected
+            
         except Exception as e:
-            logger.error(f"Error getting random contacts for {user_id}: {e}")
+            logger.error(f"Error getting priority contacts for {user_id}: {e}")
             return []
 
     async def generate_recall_message(self, contacts: list, bio: str = None, focus: str = None) -> str:
@@ -32,7 +51,7 @@ class RecallService:
         Генерирует стратегический совет по нетворку на основе списка контактов.
         """
         contacts_str = "\n".join([
-            f"- ID: {c['id']}\n  Name: {c['name']}\n  Summary: {c['summary']}\n  Meta: {c.get('meta', {})}"
+            f"- ID: {c.get('id', 'N/A')}\n  Name: {c.get('name', 'N/A')}\n  Summary: {c.get('summary', 'N/A')}\n  Meta: {c.get('meta', {})}"
             for c in contacts
         ])
 
@@ -138,6 +157,7 @@ class RecallService:
                 # 2. Берем БАТЧ контактов (3-5 штук) для анализа
                 contacts = await self.get_random_contacts_for_user(user_id, limit=4)
                 if not contacts:
+                    # Если контактов нет совсем, то скипаем (в Onboarding мы форсим создание первого)
                     continue
 
                 # 3. Генерируем умный совет с учетом Bio и Focus
