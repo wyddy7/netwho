@@ -1,24 +1,30 @@
 FROM python:3.11-slim
 
+# 1. Получаем бинарник uv из официального образа
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
 WORKDIR /app
 
-# Установка системных зависимостей (ffmpeg для голосовых)
+# 2. Установка системных зависимостей (ffmpeg для голосовых)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем зависимости
-COPY requirements.txt .
+# 3. Сначала копируем только файлы зависимостей!
+# Это позволяет Docker'у закэшировать слой с установленными пакетами.
+# Если ты поменяешь код бота, но не зависимости, этот шаг (и скачивание пакетов) пропустится.
+COPY pyproject.toml uv.lock ./
 
-# Установка зависимостей
-RUN pip install --no-cache-dir -r requirements.txt
+# 4. Устанавливаем зависимости
+# --frozen: строго следовать uv.lock (не обновлять версии самовольно)
+RUN uv sync --frozen
 
-# Копируем код
+# 5. Теперь копируем весь остальной код
 COPY . .
 
-# Создаем папку для временных файлов (аудио)
+# 6. Создаем папку для временных файлов
 RUN mkdir -p temp_voice
 
-# Запуск
-CMD ["python", "app/main.py"]
-
+# 7. Запускаем через uv run
+# Он сам подхватит виртуальное окружение, которое создал uv sync
+CMD ["uv", "run", "app/main.py"]
