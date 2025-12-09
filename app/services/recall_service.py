@@ -6,6 +6,8 @@ from app.services.ai_service import ai_service
 from app.services.search_service import search_service
 from app.config import settings
 
+from app.prompts_loader import get_prompt
+
 class RecallService:
     def __init__(self):
         self.supabase = get_supabase()
@@ -32,39 +34,23 @@ class RecallService:
             for c in contacts
         ])
 
-        prompt = (
-            f"Ты — стратегический советник по нетворку (Business Development Assistant). "
-            f"Твоя цель — создать ПОВОД (Reason) для общения, а не просто 'приветствие'.\n\n"
-            f"Вот список случайных контактов пользователя (Дани):\n{contacts_str}\n\n"
-            f"Твоя задача:\n"
-            f"1. Выбери 1-2 самых интересных контакта (или пару для синергии).\n"
-            f"2. Сгенерируй КОНКРЕТНУЮ идею (Action Item).\n"
-            f"3. Формат ответа строго HTML (без Markdown **bold**):\n"
-            f"   🎲 <b>Анализ связей...</b>\n\n"
-            f"   <b>Кандидат:</b> [Имя] ([Коротко кто он])\n"
-            f"   <b>Контекст:</b> [Почему именно он?]\n\n"
-            f"   💡 <b>Идея:</b> [Дерзкий и конкретный совет, что сделать/написать. Например: 'Скинь ему статью про X', 'Позови в бар с Y', 'Спроси про Z'.]\n\n"
-            f"Если выбрал пару:\n"
-            f"   <b>Пара:</b> [Имя 1] + [Имя 2]\n"
-            f"   <b>Синергия:</b> [Почему их надо свести]\n\n"
-            f"   💡 <b>Идея:</b> [Что сделать]\n\n"
-            f"Не пиши общих фраз. Будь краток, дерзок и полезен. Пиши от лица советника, который обращается к Дане."
-        )
-        
+        system_prompt = get_prompt("recall_advisor")
+        user_content = f"Contacts List:\n{contacts_str}"
+
         try:
             response = await ai_service.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ]
             )
             content = response.choices[0].message.content.strip()
             
-            # Очистка от маркдауна
+            # Очистка
             content = content.replace("**", "")
-            # Очистка от кавычек по краям
-            if content.startswith('"') and content.endswith('"'):
-                content = content[1:-1]
-            if content.startswith("'") and content.endswith("'"):
-                content = content[1:-1]
+            if content.startswith("```html"): content = content[7:]
+            if content.endswith("```"): content = content[:-3]
                 
             return content.strip()
         except Exception as e:

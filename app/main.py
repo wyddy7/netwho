@@ -58,7 +58,7 @@ async def main():
     
     scheduler.start()
     logger.info("Scheduler started")
-
+    
     await bot.delete_webhook(drop_pending_updates=True)
     
     try:
