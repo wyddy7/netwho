@@ -23,6 +23,7 @@ async def cmd_admin_help(message: types.Message):
         "• <code>/give_pro &lt;user_id&gt; &lt;days&gt;</code> - Give Pro subscription\n"
         "• <code>/revoke_pro &lt;user_id&gt;</code> - Remove Pro subscription\n"
         "• <code>/check_user &lt;user_id&gt;</code> - Check user info\n"
+        "• <code>/debug_user &lt;user_id&gt;</code> - Raw DB info\n"
     )
     await message.answer(text)
 
@@ -73,25 +74,19 @@ async def cmd_revoke_pro(message: types.Message):
             
         target_id = int(args[1])
         
-        # Set subscription to 0 days (effectively expire)
-        # Or better: set pro_until to past.
-        # Reuse update_subscription with negative days? 
-        # No, update_subscription logic is: current + days OR now + days.
-        # If we pass negative days to 'now + days', it works.
+        # Check if user exists
+        user = await user_service.get_user(target_id)
+        if not user:
+            await message.reply("❌ User not found.")
+            return
         
-        # Hack: Pass -1 days.
-        # Wait, if user has active sub till 2025, adding -1 day just reduces it.
-        # We want to KILL it.
+        # Revoke subscription using centralized method
+        success = await user_service.revoke_subscription(target_id)
         
-        # Let's implement force expire in user_service or just direct update here?
-        # Direct update is cleaner for admin tool.
-        
-        from datetime import datetime
-        
-        # Set to yesterday
-        await user_service.update_user_field(target_id, "pro_until", datetime(2000, 1, 1).isoformat())
-        
-        await message.reply(f"✅ Pro subscription revoked for user {target_id}.")
+        if success:
+            await message.reply(f"✅ Pro subscription revoked for user {target_id}.")
+        else:
+            await message.reply("❌ Failed to revoke subscription. Check server logs.")
             
     except ValueError:
         await message.reply("❌ Invalid format. Use numbers.")
@@ -117,11 +112,13 @@ async def cmd_check_user(message: types.Message):
             await message.reply("❌ User not found.")
             return
             
+        bio_preview = user.bio[:50] + "..." if user.bio and len(user.bio) > 50 else (user.bio or "None")
         text = (
             f"👤 <b>User Info:</b>\n"
             f"ID: <code>{user.id}</code>\n"
             f"Name: {user.full_name}\n"
-            f"Bio: {user.bio[:50]}...\n"
+            f"Bio: {bio_preview}\n"
+            f"is_premium: {user.is_premium}\n"
             f"Pro Until: {user.pro_until}\n"
             f"Created: {user.created_at}"
         )
@@ -132,3 +129,47 @@ async def cmd_check_user(message: types.Message):
     except Exception as e:
         await message.reply(f"❌ Error: {e}")
 
+@router.message(Command("debug_user"))
+async def cmd_debug_user(message: types.Message):
+    """
+    Shows RAW JSON data from Supabase for a user to debug field issues.
+    """
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        args = message.text.split()
+        if len(args) != 2:
+            await message.reply("Usage: /debug_user <user_id>")
+            return
+            
+        target_id = int(args[1])
+        
+        # Direct raw select
+        response = user_service.supabase.table("users").select("*").eq("id", target_id).execute()
+        
+        if not response.data:
+            await message.reply("❌ User not found in DB.")
+            return
+            
+        user_data = response.data[0]
+        
+        # Format important fields
+        # Escape HTML chars in raw output just in case
+        import html
+        
+        raw_dump = html.escape(str(user_data)[:3000])
+        type_info = html.escape(str(type(user_data.get('is_premium'))))
+        
+        debug_text = (
+            f"🐛 <b>DEBUG INFO for {target_id}</b>\n\n"
+            f"<b>is_premium:</b> <code>{user_data.get('is_premium')}</code> ({type_info})\n"
+            f"<b>pro_until:</b> <code>{user_data.get('pro_until')}</code>\n"
+            f"<b>Raw Data:</b>\n<pre>{raw_dump}</pre>" 
+        )
+        
+        await message.reply(debug_text)
+        
+    except Exception as e:
+        logger.error(f"Debug user error: {e}")
+        await message.reply(f"❌ Error: {e}")

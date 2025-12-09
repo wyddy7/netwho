@@ -72,6 +72,7 @@ class UserService:
     async def update_subscription(self, user_id: int, days: int) -> bool:
         """
         Extend or set subscription.
+        Also updates is_premium flag based on pro_until date.
         """
         from datetime import timedelta, timezone
         
@@ -87,10 +88,42 @@ class UserService:
                 new_date = current_user.pro_until + timedelta(days=days)
             else:
                 new_date = now + timedelta(days=days)
-                
-            return await self.update_user_field(user_id, "pro_until", new_date.isoformat())
+            
+            # Update both pro_until and is_premium
+            # is_premium should be True if new_date is in the future
+            is_premium = new_date > now
+            
+            # Use bulk update to set both fields at once
+            updates = {
+                "pro_until": new_date.isoformat(),
+                "is_premium": is_premium
+            }
+            
+            response = self.supabase.table("users")\
+                .update(updates)\
+                .eq("id", user_id)\
+                .execute()
+            return bool(response.data)
         except Exception as e:
             logger.error(f"Error updating subscription: {e}")
+            return False
+
+    async def revoke_subscription(self, user_id: int) -> bool:
+        """
+        Revoke subscription by clearing pro_until.
+        We rely on pro_until date for all logic, so clearing it effectively removes Pro.
+        """
+        try:
+            # Just clear the date. 
+            # is_pro() checks `if not user.pro_until: return False`, so this is sufficient.
+            response = self.supabase.table("users")\
+                .update({"pro_until": None, "is_premium": False})\
+                .eq("id", user_id)\
+                .execute()
+            
+            return bool(response.data)
+        except Exception as e:
+            logger.error(f"Error revoking subscription: {e}")
             return False
 
     async def accept_terms(self, user_id: int) -> bool:
