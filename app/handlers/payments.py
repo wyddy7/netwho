@@ -1,6 +1,7 @@
 from aiogram import Router, F, types
 from aiogram.types import Message, LabeledPrice, PreCheckoutQuery, ContentType
 from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 
 from app.services.user_service import user_service
@@ -11,39 +12,65 @@ router = Router()
 
 # --- Payment Handlers ---
 
-@router.callback_query(F.data == "buy_pro_callback")
-async def buy_pro_callback(callback: types.CallbackQuery):
-    """
-    Callback wrapper for buying pro.
-    """
-    await buy_pro(callback.message)
-    await callback.answer()
-
 @router.message(Command("buy_pro"))
 @router.message(F.text == "💎 Купить Pro")
-async def buy_pro(message: Message):
+@router.callback_query(F.data == "buy_pro_callback")
+async def show_pro_offer(event: Message | types.CallbackQuery):
     """
-    Отправляет инвойс на оплату Pro-подписки (Telegram Stars).
+    Показывает сравнение тарифов перед оплатой.
     """
-    # 1. Marketing Message (Sandwich method)
-    await message.answer(
-        f"🚀 <b>Early Bird Offer</b>\n\n"
-        f"<s>{settings.PRICE_ANCHOR_STARS} ⭐️</s> → <b>{settings.PRICE_MONTH_STARS} ⭐️</b>\n"
-        "<i>(Цена для первых пользователей до релиза v1.0)</i>"
+    message = event.message if isinstance(event, types.CallbackQuery) else event
+    
+    text = (
+        "💎 <b>NetWho Pro: Что ты получаешь?</b>\n\n"
+        "<b>Free Plan:</b>\n"
+        "• Только 15 контактов\n"
+        "• Голосовые по 30 секунд\n"
+        "• 3 анализа ссылок для твоего нетворка (всего)\n"
+        "• Короткая память (3 сообщения)\n"
+        "• 1 Recall в неделю\n"
+        "• Ручной Recall: 1 раз в сутки\n\n"
+        "<b>🚀 Pro Plan (250 ⭐️):</b>\n"
+        "• Recall каждый день\n"
+        "• Безлимит на ссылки\n"
+        "• Глубокая память (10+ сообщений)\n"
+        "• Безлимитный ручной Recall\n"
+        "• Голосовые без ограничений\n\n"
+        f"<i>Цена для ранних пташек: {settings.PRICE_MONTH_STARS} вместо {settings.PRICE_ANCHOR_STARS} ⭐️.</i>"
     )
+    
+    builder = InlineKeyboardBuilder()
+    builder.button(text=f"🚀 Оформить за {settings.PRICE_MONTH_STARS} ⭐️", callback_data="proceed_to_payment")
+    builder.adjust(1)
+    
+    if isinstance(event, types.CallbackQuery):
+        # Если вызвано из меню, обновляем сообщение (или шлем новое, если старое было текстовым?)
+        # Лучше слать новое, чтобы старое меню осталось? Или редактировать?
+        # Обычно оффер лучше слать новым сообщением, так как там много текста.
+        await message.answer(text, reply_markup=builder.as_markup())
+        await event.answer()
+    else:
+        await message.answer(text, reply_markup=builder.as_markup())
 
-    # 2. Invoice
-    await message.answer_invoice(
-        title="NetWho Pro (1 Month)",
-        description=(
-            "Безлимитные контакты, Умный Recall и чтение новостей.\n"
-            "Инвестиция в твой социальный капитал."
-        ),
+@router.callback_query(F.data == "proceed_to_payment")
+async def send_invoice(callback: types.CallbackQuery):
+    """
+    Отправляет инвойс после подтверждения.
+    """
+    description = (
+        "Безлимитные контакты, Умный Recall каждый день, Чтение новостей. "
+        "Цена для первых пользователей."
+    )
+    
+    await callback.message.answer_invoice(
+        title="Early Bird Pro (1 Month)",
+        description=description,
         payload="netwho_pro_month",
-        currency="XTR",  # Telegram Stars
-        prices=[LabeledPrice(label="Pro Month (Early Bird)", amount=settings.PRICE_MONTH_STARS)], 
+        currency="XTR",
+        prices=[LabeledPrice(label="Pro Month", amount=settings.PRICE_MONTH_STARS)], 
         provider_token="" # Empty for Stars
     )
+    await callback.answer()
 
 @router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery):
