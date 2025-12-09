@@ -50,8 +50,13 @@ class RecallService:
         """
         Генерирует стратегический совет по нетворку на основе списка контактов.
         """
+        def get_val(obj, key, default=None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
         contacts_str = "\n".join([
-            f"- ID: {c.get('id', 'N/A')}\n  Name: {c.get('name', 'N/A')}\n  Summary: {c.get('summary', 'N/A')}\n  Meta: {c.get('meta', {})}"
+            f"- ID: {get_val(c, 'id', 'N/A')}\n  Name: {get_val(c, 'name', 'N/A')}\n  Summary: {get_val(c, 'summary', 'N/A')}\n  Meta: {get_val(c, 'meta', {})}"
             for c in contacts
         ])
 
