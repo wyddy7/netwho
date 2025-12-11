@@ -152,24 +152,27 @@ class AIService:
         if not settings.GROQ_API_KEY:
             logger.warning("GROQ_API_KEY is not set. Voice disabled.")
             return ""
-            
+
         try:
             from groq import AsyncGroq
+            import os
             client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-            
-            with open(file_path, "rb") as file:
-                content = file.read()
-                
-            transcription = await client.audio.transcriptions.create(
-                file=(file_path, content),
-                model="whisper-large-v3",
-                response_format="json",
-                language="ru",
-                temperature=0.0
-            )
+
+            logger.debug(f"Starting transcription for file: {file_path}")
+
+            with open(file_path, "rb") as audio_file:
+                transcription = await client.audio.transcriptions.create(
+                    file=audio_file,
+                    model="whisper-large-v3",
+                    response_format="json",
+                    language="ru",
+                    temperature=0.0
+                )
+            logger.debug(f"Transcription result: '{transcription.text}'")
             return transcription.text
         except Exception as e:
             logger.error(f"STT failed: {e}")
+            logger.error(f"Error type: {type(e)}")
             return ""
 
     async def extract_contact_info(self, text: str) -> ContactExtracted:

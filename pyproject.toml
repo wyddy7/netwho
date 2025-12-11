@@ -1,18 +1,27 @@
 [project]
 name = "netwho"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered networking assistant with voice recognition"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "aiogram>=3.23.0",
-    "apscheduler>=3.11.1",
-    "groq>=0.37.1",
-    "loguru>=0.7.3",
-    "openai>=2.9.0",
-    "pydantic-settings>=2.12.0",
-    "python-dotenv>=1.2.1",
-    "pyyaml>=6.0.3",
-    "supabase>=2.25.0",
-    "tenacity>=9.1.2",
+    "aiogram==3.23.0",
+    "apscheduler==3.11.1",
+    "groq==0.37.1",
+    "loguru==0.7.3",
+    "openai==2.9.0",
+    "pydantic-settings==2.12.0",
+    "pydantic==2.12.5",
+    "python-dotenv==1.2.1",
+    "pyyaml==6.0.3",
+    "supabase==2.25.0",
+    "tenacity==9.1.2",
+]
+
+[tool.uv]
+dev-dependencies = []
+
+[project.optional-dependencies]
+performance = [
+    "uvloop==0.19.0; sys_platform != 'win32'",
 ]
