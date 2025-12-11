@@ -423,6 +423,17 @@ class AIService:
                     force_new = fn_args.get("force_new", False)
                     
                     extracted = await self.extract_contact_info(text_to_process)
+
+                    # --- Name Fallback (Fix for None validation error) ---
+                    if not extracted.name or not extracted.name.strip():
+                        # Пробуем сгенерировать имя из текста
+                        words = text_to_process.split()[:5]
+                        generated_name = " ".join(words)
+                        if not generated_name:
+                            generated_name = "Новая заметка"
+                        
+                        extracted.name = f"Заметка: {generated_name}..."
+                    # -----------------------------------------------------
                     
                     # --- Disambiguation Check ---
                     if not force_new:
