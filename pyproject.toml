@@ -17,11 +17,3 @@ dependencies = [
     "supabase==2.25.0",
     "tenacity==9.1.2",
 ]
-
-[tool.uv]
-dev-dependencies = []
-
-[project.optional-dependencies]
-performance = [
-    "uvloop==0.19.0; sys_platform != 'win32'",
-]

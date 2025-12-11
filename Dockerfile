@@ -17,8 +17,7 @@ COPY pyproject.toml uv.lock ./
 
 # 4. Устанавливаем зависимости
 # --frozen: строго следовать uv.lock (не обновлять версии самовольно)
-# --extra performance: устанавливает uvloop для Linux
-RUN uv sync --frozen --extra performance
+RUN uv sync --frozen
 
 # 5. Теперь копируем весь остальной код
 COPY . .
