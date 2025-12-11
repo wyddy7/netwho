@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Voice (Groq)
     GROQ_API_KEY: str | None = None
 
+    # Proxy
+    PROXY_URL: str | None = None
+
     # App Settings
     CHAT_HISTORY_DEPTH: int = 10
     

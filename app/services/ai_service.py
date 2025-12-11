@@ -129,10 +129,19 @@ TOOLS_SCHEMA = [
 
 class AIService:
     def __init__(self):
+        # Настройка HTTP клиента с прокси, если он задан
+        http_client = None
+        if settings.PROXY_URL:
+            import httpx
+            logger.info(f"Using PROXY: {settings.PROXY_URL}")
+            http_client = httpx.AsyncClient(proxy=settings.PROXY_URL)
+
         self.llm_client = AsyncOpenAI(
             api_key=settings.OPENROUTER_API_KEY,
-            base_url=settings.OPENROUTER_BASE_URL
+            base_url=settings.OPENROUTER_BASE_URL,
+            http_client=http_client
         )
+        self.http_client = http_client
 
     async def get_embedding(self, text: str) -> list[float]:
         try:
@@ -156,7 +165,12 @@ class AIService:
         try:
             from groq import AsyncGroq
             import os
-            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            
+            # Передаем http_client с прокси, если он есть
+            client = AsyncGroq(
+                api_key=settings.GROQ_API_KEY,
+                http_client=self.http_client
+            )
 
             logger.debug(f"Starting transcription for file: {file_path}")
 
