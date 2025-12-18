@@ -42,3 +42,5 @@ class NewsService:
 news_service = NewsService()
 
 
+
+
