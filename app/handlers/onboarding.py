@@ -142,6 +142,13 @@ async def start_onboarding_flow(callback: types.CallbackQuery, state: FSMContext
 
 @router.message(OnboardingStates.waiting_for_bio)
 async def process_bio_step(message: types.Message, state: FSMContext):
+    # Проверка состояния (дополнительная защита)
+    current_state = await state.get_state()
+    if current_state != OnboardingStates.waiting_for_bio:
+        await message.answer("⚠️ Обнаружен сброс состояния. Начните заново: /start")
+        await state.clear()
+        return
+    
     text = message.text
     if message.voice:
         text = await process_voice_input(message)
@@ -173,6 +180,13 @@ async def process_bio_step(message: types.Message, state: FSMContext):
 
 @router.message(OnboardingStates.waiting_for_first_contact)
 async def process_first_contact_step(message: types.Message, state: FSMContext):
+    # Проверка состояния (дополнительная защита)
+    current_state = await state.get_state()
+    if current_state != OnboardingStates.waiting_for_first_contact:
+        await message.answer("⚠️ Обнаружен сброс состояния. Начните заново: /start")
+        await state.clear()
+        return
+    
     user_id = message.from_user.id
     text = message.text
     if message.voice:

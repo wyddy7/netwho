@@ -1,4 +1,7 @@
+import secrets
+from uuid import UUID
 from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from app.utils.chat_action import KeepTyping
@@ -16,8 +19,12 @@ from app.schemas import (
 
 router = Router()
 
-# {user_id: {"type": "add"|"del"|"update", "data": ...}}
+# {user_id: {"type": "add"|"del"|"update", "data": ..., "request_id": "..."}}
 pending_actions = {}
+
+def generate_request_id() -> str:
+    """Генерирует короткий случайный ID для запроса (8 символов)."""
+    return secrets.token_urlsafe(6)[:8]  # Берем первые 8 символов
 
 async def handle_agent_response(message: types.Message, response):
     try:
@@ -53,7 +60,8 @@ async def handle_agent_response(message: types.Message, response):
                 await message.reply(limit_msg)
                 return
 
-            pending_actions[user_id] = {"type": "add", "data": response}
+            request_id = generate_request_id()
+            pending_actions[user_id] = {"type": "add", "data": response, "request_id": request_id}
             
             text = (
                 f"📝 <b>Проверь перед сохранением:</b>\n"
@@ -63,14 +71,15 @@ async def handle_agent_response(message: types.Message, response):
                 "Сохранить?"
             )
             builder = InlineKeyboardBuilder()
-            builder.button(text="💾 Сохранить", callback_data="confirm_action")
+            builder.button(text="💾 Сохранить", callback_data=f"confirm_{request_id}")
             builder.button(text="❌ Отмена", callback_data="cancel_action")
             builder.adjust(2)
             await message.reply(text, reply_markup=builder.as_markup())
 
         # 3. ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ (Нужно подтверждение)
         elif isinstance(response, ContactDeleteAsk):
-            pending_actions[user_id] = {"type": "del", "data": response.contact_id}
+            request_id = generate_request_id()
+            pending_actions[user_id] = {"type": "del", "data": response.contact_id, "request_id": request_id}
             
             text = (
                 f"⚠️ <b>Удалить этот контакт?</b>\n"
@@ -79,14 +88,15 @@ async def handle_agent_response(message: types.Message, response):
                 f"{response.summary}"
             )
             builder = InlineKeyboardBuilder()
-            builder.button(text="🗑 Удалить", callback_data="confirm_action")
+            builder.button(text="🗑 Удалить", callback_data=f"confirm_{request_id}")
             builder.button(text="❌ Отмена", callback_data="cancel_action")
             builder.adjust(2)
             await message.reply(text, reply_markup=builder.as_markup())
 
         # 4. ПОДТВЕРЖДЕНИЕ ОБНОВЛЕНИЯ
         elif isinstance(response, ContactUpdateAsk):
-            pending_actions[user_id] = {"type": "update", "data": response}
+            request_id = generate_request_id()
+            pending_actions[user_id] = {"type": "update", "data": response, "request_id": request_id}
             
             text = (
                 f"✏️ <b>Обновить контакт?</b>\n"
@@ -96,7 +106,7 @@ async def handle_agent_response(message: types.Message, response):
                 f"Станет:\n{response.new_summary}"
             )
             builder = InlineKeyboardBuilder()
-            builder.button(text="💾 Сохранить", callback_data="confirm_action")
+            builder.button(text="💾 Сохранить", callback_data=f"confirm_{request_id}")
             builder.button(text="❌ Отмена", callback_data="cancel_action")
             builder.adjust(2)
             await message.reply(text, reply_markup=builder.as_markup())
@@ -243,15 +253,26 @@ async def handle_text(message: types.Message):
 
 # --- CALLBACK HANDLERS ---
 
-@router.callback_query(F.data == "confirm_action")
+@router.callback_query(F.data.startswith("confirm_"))
 async def on_action_confirm(callback: types.CallbackQuery):
     user_id = callback.from_user.id
-    action = pending_actions.pop(user_id, None)
+    request_id = callback.data.replace("confirm_", "")
+    
+    action = pending_actions.get(user_id)
     
     if not action:
         await callback.answer("Время ожидания истекло", show_alert=True)
         await callback.message.delete()
         return
+    
+    # Проверка request_id для защиты от устаревших кнопок
+    if action.get("request_id") != request_id:
+        await callback.answer("Кнопка устарела", show_alert=True)
+        await callback.message.delete()
+        return
+    
+    # Удаляем из pending только после проверки request_id
+    pending_actions.pop(user_id)
 
     try:
         if action["type"] == "add":
@@ -266,6 +287,13 @@ async def on_action_confirm(callback: types.CallbackQuery):
             
         elif action["type"] == "del":
             contact_id = action["data"]
+            # Дополнительная проверка прав через БД
+            contact = await search_service.get_contact_by_id(contact_id, user_id)
+            if not contact:
+                await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+                await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Access denied.")
+                return
+            
             success = await search_service.delete_contact(contact_id, user_id)
             if success:
                 await callback.message.edit_text(f"🗑 Контакт удален.")
@@ -278,6 +306,13 @@ async def on_action_confirm(callback: types.CallbackQuery):
         
         elif action["type"] == "update":
             update_ask = action["data"]
+            # Проверка прав перед обновлением
+            contact = await search_service.get_contact_by_id(update_ask.contact_id, user_id)
+            if not contact:
+                await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+                await user_service.save_chat_message(user_id, "system", f"[System] Failed to update contact {update_ask.contact_id}: Access denied.")
+                return
+            
             await search_service.update_contact(update_ask.contact_id, user_id, update_ask.updates)
             await callback.message.edit_text(
                 f"✅ <b>Обновил:</b> {update_ask.name}\n\n📝 {update_ask.new_summary}"
@@ -307,27 +342,40 @@ async def on_pre_delete_click(callback: types.CallbackQuery):
     """
     Нажатие на корзину из списка поиска.
     """
-    contact_id = callback.data.replace("pre_del_", "")
+    contact_id_str = callback.data.replace("pre_del_", "")
     user_id = callback.from_user.id
+    
+    # Валидация UUID перед запросом к БД
+    try:
+        contact_id = UUID(contact_id_str)
+    except (ValueError, AttributeError):
+        logger.warning(f"Invalid UUID format in callback_data: {contact_id_str} from user {user_id}")
+        await callback.answer("❌ Неверный формат ID контакта", show_alert=True)
+        return
+    
+    # КРИТИЧНО: Проверяем права владения через БД ДО любых действий
+    contact = await search_service.get_contact_by_id(contact_id, user_id)
+    if not contact:
+        await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+        return
     
     user = await user_service.get_user(user_id)
     settings = user.settings if user else UserSettings()
     
     if settings.confirm_delete:
-        # Получаем инфу для красоты
-        contact = await search_service.get_contact_by_id(contact_id, user_id)
-        contact_name = contact.name if contact else "???"
+        contact_name = contact.name
         
         # Сохраняем в pending_actions, чтобы работала общая логика
-        pending_actions[user_id] = {"type": "del", "data": contact_id}
+        request_id = generate_request_id()
+        pending_actions[user_id] = {"type": "del", "data": contact_id, "request_id": request_id}
         
         builder = InlineKeyboardBuilder()
-        builder.button(text="🗑 Удалить", callback_data="confirm_action") # Используем общий колбэк
+        builder.button(text="🗑 Удалить", callback_data=f"confirm_{request_id}") # Используем общий колбэк
         builder.button(text="❌ Отмена", callback_data="cancel_action")
         builder.adjust(2)
         
         await callback.message.reply(
-            f"⚠️ <b>Удалить этот контакт?</b>\n\n👤 {contact_name}\nID: <code>{contact_id[:5]}</code>", 
+            f"⚠️ <b>Удалить этот контакт?</b>\n\n👤 {contact_name}\nID: <code>{str(contact_id)[:8]}</code>", 
             reply_markup=builder.as_markup()
         )
         await callback.answer()
@@ -335,14 +383,117 @@ async def on_pre_delete_click(callback: types.CallbackQuery):
         # Rage Mode
         await perform_delete(callback, contact_id, user_id)
 
-async def perform_delete(callback: types.CallbackQuery, contact_id: str, user_id: int):
+async def perform_delete(callback: types.CallbackQuery, contact_id: UUID, user_id: int):
+    """
+    Выполняет удаление контакта с проверкой прав через БД.
+    """
+    # Дополнительная проверка прав (на случай прямого вызова)
+    contact = await search_service.get_contact_by_id(contact_id, user_id)
+    if not contact:
+        await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+        return
+    
     try:
         success = await search_service.delete_contact(contact_id, user_id)
         if success:
             await callback.answer("Контакт удален!", show_alert=True)
-            await callback.message.answer(f"🗑 Контакт <code>{contact_id[:5]}</code> удален.")
+            await callback.message.answer(f"🗑 Контакт <code>{str(contact_id)[:8]}</code> удален.")
         else:
             await callback.answer("Ошибка: Контакт не найден", show_alert=True)
     except Exception as e:
         logger.error(f"Delete error: {e}")
         await callback.answer("Ошибка при удалении", show_alert=True)
+
+# --- ВРЕМЕННЫЙ ТЕСТОВЫЙ ХЕНДЛЕР ДЛЯ ПЕНТЕСТА ---
+# TODO: Удалить после проверки защиты
+
+@router.message(Command("test_hack"))
+async def cmd_test_hack(message: types.Message):
+    """
+    Временный handler для тестирования защиты от удаления чужих контактов.
+    Создает кнопку с callback_data="pre_del_{ID}", чтобы проверить, что защита работает.
+    """
+    from app.config import settings
+    
+    # Проверка, что команда доступна только админу
+    if message.from_user.id != settings.ADMIN_ID:
+        await message.answer("❌ Только для админа")
+        return
+    
+    user_id = message.from_user.id
+    args = message.text.split()
+    
+    # Если передан ID контакта как аргумент
+    if len(args) >= 2:
+        contact_id_str = args[1]
+        
+        # Валидация UUID
+        try:
+            contact_id = UUID(contact_id_str)
+        except (ValueError, AttributeError):
+            await message.answer(
+                f"❌ <b>Неверный формат UUID</b>\n\n"
+                f"Переданное значение: <code>{contact_id_str}</code>\n\n"
+                f"UUID должен быть в формате: <code>123e4567-e89b-12d3-a456-426614174000</code>\n\n"
+                f"Используй <code>/test_hack</code> без аргументов, чтобы увидеть список своих контактов."
+            )
+            return
+        
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🔥 ВЗЛОМАТЬ (Удалить контакт)", callback_data=f"pre_del_{contact_id}")
+        builder.adjust(1)
+        
+        await message.answer(
+            f"⚠️ <b>Тестовая кнопка удаления</b>\n\n"
+            f"ID контакта: <code>{contact_id}</code>\n"
+            f"Твой ID: <code>{user_id}</code>\n\n"
+            "Нажми кнопку ниже. Если контакт не твой — защита должна сработать.",
+            reply_markup=builder.as_markup()
+        )
+    else:
+        # Показываем список контактов пользователя с их UUID
+        contacts = await search_service.get_recent_contacts(user_id, limit=10)
+        
+        if not contacts:
+            await message.answer(
+                "❌ <b>У тебя нет контактов</b>\n\n"
+                "Создай контакт через бота, а затем используй эту команду снова.\n\n"
+                "Или используй: <code>/test_hack &lt;uuid_контакта&gt;</code>\n"
+                "где UUID можно взять из базы данных (таблица <code>contacts</code>)."
+            )
+            return
+        
+        text_parts = [
+            "🔒 <b>Тест защиты от удаления чужих контактов</b>\n\n",
+            "<b>Твои контакты (последние 10):</b>\n\n"
+        ]
+        
+        builder = InlineKeyboardBuilder()
+        
+        for i, contact in enumerate(contacts[:5], 1):  # Показываем первые 5 для краткости
+            contact_uuid = str(contact.id)
+            short_uuid = contact_uuid[:8] + "..."
+            text_parts.append(
+                f"{i}. <b>{contact.name}</b>\n"
+                f"   UUID: <code>{contact_uuid}</code>\n"
+            )
+            builder.button(
+                text=f"🔥 Тест {i}: {contact.name[:15]}",
+                callback_data=f"pre_del_{contact_uuid}"
+            )
+        
+        if len(contacts) > 5:
+            text_parts.append(f"\n... и еще {len(contacts) - 5} контактов")
+        
+        text_parts.append(
+            "\n<b>Или используй:</b> <code>/test_hack &lt;uuid&gt;</code>\n\n"
+            "Нажми кнопку ниже, чтобы протестировать удаление своего контакта.\n"
+            "Для теста чужого контакта используй UUID из базы данных."
+        )
+        
+        builder.adjust(1)
+        
+        await message.answer(
+            "".join(text_parts),
+            reply_markup=builder.as_markup()
+        )
