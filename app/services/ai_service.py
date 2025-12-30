@@ -466,12 +466,15 @@ class AIService:
                         embedding=embedding
                     )
                     
+                    logger.debug(f"[ai_service] add_contact: name='{extracted.name}', user_id={user_id}, force_new={force_new}")
+                    
                     if settings_obj.confirm_add:
                         # Если нужно подтверждение, мы ПРЕРЫВАЕМ цикл и возвращаем Draft
                         await user_service.save_chat_message(user_id, "system", "[System] Draft created. Waiting for user confirmation via 'confirm_action' or 'cancel_action'.")
                         return ContactDraft(**contact_create.model_dump())
                     else:
-                        await search_service.create_contact(contact_create)
+                        contact = await search_service.create_contact(contact_create)
+                        logger.info(f"[ai_service] add_contact: Contact created successfully - id={contact.id}, name='{contact.name}'")
                         tool_result_content = f"Contact '{extracted.name}' created successfully."
                         execution_result = contact_create
 
@@ -483,10 +486,12 @@ class AIService:
 
                 elif fn_name == "delete_contact":
                     contact_id = fn_args.get("contact_id")
+                    logger.debug(f"[ai_service] delete_contact: contact_id={contact_id}, user_id={user_id}")
                     if settings_obj.confirm_delete:
                         # Если нужно подтверждение, ищем контакт для отображения
                         contact = await search_service.get_contact_by_id(contact_id, user_id)
                         if contact:
+                            logger.debug(f"[ai_service] delete_contact: Contact found, returning ContactDeleteAsk")
                             await user_service.save_chat_message(user_id, "system", f"[System] Deletion requested for ID {contact_id}. Waiting for confirmation via 'confirm_action' or 'cancel_action'.")
                             return ContactDeleteAsk(
                                 contact_id=str(contact.id),
@@ -494,11 +499,22 @@ class AIService:
                                 summary=contact.summary
                             )
                         else:
-                            tool_result_content = "Error: Contact not found."
+                            logger.warning(f"[ai_service] delete_contact: Contact not found or access denied")
+                            tool_result_content = "ERROR: Access Denied. Contact not found or does not belong to you."
                     else:
-                        success = await search_service.delete_contact(contact_id, user_id)
-                        status = 'deleted' if success else 'not found'
-                        tool_result_content = f"Contact {status}."
+                        try:
+                            success = await search_service.delete_contact(contact_id, user_id)
+                            logger.info(f"[ai_service] delete_contact: success={success}")
+                            status = 'deleted' if success else 'not found'
+                            tool_result_content = f"Contact {status}."
+                        except Exception as e:
+                            from app.services.search_service import AccessDenied
+                            if isinstance(e, AccessDenied):
+                                logger.warning(f"[ai_service] delete_contact: AccessDenied - {e}")
+                                tool_result_content = "ERROR: Access Denied. Contact does not belong to you."
+                            else:
+                                logger.error(f"[ai_service] delete_contact: Exception - {type(e).__name__}: {e}", exc_info=True)
+                                tool_result_content = f"ERROR: Failed to delete contact. {str(e)}"
 
                 elif fn_name == "update_contact":
                     contact_id = fn_args["contact_id"]

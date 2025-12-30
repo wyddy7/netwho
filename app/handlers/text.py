@@ -125,8 +125,26 @@ async def handle_agent_response(message: types.Message, response):
             
             elif action["type"] == "del":
                 contact_id = action["data"]
-                await search_service.delete_contact(contact_id, user_id)
-                await message.reply(f"🗑 Контакт удален.")
+                logger.error(f"[handle_agent_response.ActionConfirmed.del] ENTRY: contact_id={contact_id} (type: {type(contact_id).__name__}), user_id={user_id} (type: {type(user_id).__name__})")
+                try:
+                    logger.error(f"[handle_agent_response.ActionConfirmed.del] Calling delete_contact...")
+                    success = await search_service.delete_contact(contact_id, user_id)
+                    logger.error(f"[handle_agent_response.ActionConfirmed.del] delete_contact returned: success={success}")
+                    if success:
+                        logger.error(f"[handle_agent_response.ActionConfirmed.del] SUCCESS: Contact deleted. Sending confirmation message.")
+                        await message.reply(f"🗑 Контакт удален.")
+                    else:
+                        logger.error(f"[handle_agent_response.ActionConfirmed.del] FAILED: Contact not found (success=False)")
+                        await message.reply("❌ Ошибка: контакт не найден")
+                except Exception as e:
+                    from app.services.search_service import AccessDenied
+                    logger.error(f"[handle_agent_response.ActionConfirmed.del] EXCEPTION: {type(e).__name__}: {e}", exc_info=True)
+                    if isinstance(e, AccessDenied):
+                        logger.error(f"[handle_agent_response.ActionConfirmed.del] AccessDenied caught: {e}")
+                        await message.reply("❌ Контакт не найден или не принадлежит вам")
+                    else:
+                        logger.error(f"[handle_agent_response.ActionConfirmed.del] Other exception: {e}")
+                        await message.reply("❌ Ошибка при удалении")
 
             elif action["type"] == "update":
                 update_ask = action["data"]
@@ -287,39 +305,55 @@ async def on_action_confirm(callback: types.CallbackQuery):
             
         elif action["type"] == "del":
             contact_id = action["data"]
-            # Дополнительная проверка прав через БД
-            contact = await search_service.get_contact_by_id(contact_id, user_id)
-            if not contact:
-                await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
-                await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Access denied.")
-                return
-            
-            success = await search_service.delete_contact(contact_id, user_id)
-            if success:
-                await callback.message.edit_text(f"🗑 Контакт удален.")
-                await callback.answer("Удалено!")
-                # System Feedback Loop
-                await user_service.save_chat_message(user_id, "system", f"[System] Contact {contact_id} deleted successfully.")
-            else:
-                await callback.answer("Ошибка: контакт не найден", show_alert=True)
-                await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Not found.")
+            logger.error(f"[on_action_confirm.del] ENTRY: contact_id={contact_id} (type: {type(contact_id).__name__}), user_id={user_id} (type: {type(user_id).__name__})")
+            try:
+                logger.error(f"[on_action_confirm.del] Calling delete_contact...")
+                # delete_contact теперь сам проверяет права и выбрасывает AccessDenied
+                success = await search_service.delete_contact(contact_id, user_id)
+                logger.error(f"[on_action_confirm.del] delete_contact returned: success={success}")
+                if success:
+                    logger.error(f"[on_action_confirm.del] SUCCESS: Contact deleted. Updating UI.")
+                    await callback.message.edit_text(f"🗑 Контакт удален.")
+                    await callback.answer("Удалено!")
+                    # System Feedback Loop
+                    await user_service.save_chat_message(user_id, "system", f"[System] Contact {contact_id} deleted successfully.")
+                else:
+                    logger.error(f"[on_action_confirm.del] FAILED: Contact not found (success=False)")
+                    await callback.answer("Ошибка: контакт не найден", show_alert=True)
+                    await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Not found.")
+            except Exception as e:
+                from app.services.search_service import AccessDenied
+                logger.error(f"[on_action_confirm.del] EXCEPTION: {type(e).__name__}: {e}", exc_info=True)
+                if isinstance(e, AccessDenied):
+                    logger.error(f"[on_action_confirm.del] AccessDenied caught: {e}")
+                    await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+                    await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Access denied.")
+                else:
+                    logger.error(f"[on_action_confirm.del] Other exception: {e}")
+                    await callback.answer("Ошибка выполнения", show_alert=True)
+                    await user_service.save_chat_message(user_id, "system", f"[System] Action failed with error: {e}")
         
         elif action["type"] == "update":
             update_ask = action["data"]
-            # Проверка прав перед обновлением
-            contact = await search_service.get_contact_by_id(update_ask.contact_id, user_id)
-            if not contact:
-                await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
-                await user_service.save_chat_message(user_id, "system", f"[System] Failed to update contact {update_ask.contact_id}: Access denied.")
-                return
-            
-            await search_service.update_contact(update_ask.contact_id, user_id, update_ask.updates)
-            await callback.message.edit_text(
-                f"✅ <b>Обновил:</b> {update_ask.name}\n\n📝 {update_ask.new_summary}"
-            )
-            await callback.answer("Обновлено!")
-            # System Feedback Loop
-            await user_service.save_chat_message(user_id, "system", f"[System] Contact '{update_ask.name}' updated successfully.")
+            try:
+                # update_contact теперь сам проверяет права и выбрасывает AccessDenied
+                await search_service.update_contact(update_ask.contact_id, user_id, update_ask.updates)
+                await callback.message.edit_text(
+                    f"✅ <b>Обновил:</b> {update_ask.name}\n\n📝 {update_ask.new_summary}"
+                )
+                await callback.answer("Обновлено!")
+                # System Feedback Loop
+                await user_service.save_chat_message(user_id, "system", f"[System] Contact '{update_ask.name}' updated successfully.")
+            except Exception as e:
+                from app.services.search_service import AccessDenied
+                if isinstance(e, AccessDenied):
+                    logger.error(f"AccessDenied in on_action_confirm (update): {e}")
+                    await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+                    await user_service.save_chat_message(user_id, "system", f"[System] Failed to update contact {update_ask.contact_id}: Access denied.")
+                else:
+                    logger.error(f"Update error in on_action_confirm: {e}")
+                    await callback.answer("Ошибка при обновлении", show_alert=True)
+                    await user_service.save_chat_message(user_id, "system", f"[System] Failed to update contact {update_ask.contact_id}: {e}")
 
     except Exception as e:
         logger.error(f"Action confirm error: {e}")
@@ -386,23 +420,27 @@ async def on_pre_delete_click(callback: types.CallbackQuery):
 async def perform_delete(callback: types.CallbackQuery, contact_id: UUID, user_id: int):
     """
     Выполняет удаление контакта с проверкой прав через БД.
+    delete_contact теперь сам проверяет права и выбрасывает AccessDenied.
     """
-    # Дополнительная проверка прав (на случай прямого вызова)
-    contact = await search_service.get_contact_by_id(contact_id, user_id)
-    if not contact:
-        await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
-        return
-    
+    logger.debug(f"[perform_delete] contact_id={contact_id}, user_id={user_id}")
     try:
+        # delete_contact теперь сам проверяет права и выбрасывает AccessDenied
         success = await search_service.delete_contact(contact_id, user_id)
         if success:
+            logger.info(f"[perform_delete] Contact deleted: contact_id={contact_id}, user_id={user_id}")
             await callback.answer("Контакт удален!", show_alert=True)
             await callback.message.answer(f"🗑 Контакт <code>{str(contact_id)[:8]}</code> удален.")
         else:
+            logger.warning(f"[perform_delete] Contact not found: contact_id={contact_id}, user_id={user_id}")
             await callback.answer("Ошибка: Контакт не найден", show_alert=True)
     except Exception as e:
-        logger.error(f"Delete error: {e}")
-        await callback.answer("Ошибка при удалении", show_alert=True)
+        from app.services.search_service import AccessDenied
+        if isinstance(e, AccessDenied):
+            logger.warning(f"[perform_delete] AccessDenied: contact_id={contact_id}, user_id={user_id}, error={e}")
+            await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
+        else:
+            logger.error(f"[perform_delete] Exception: {type(e).__name__}: {e}", exc_info=True)
+            await callback.answer("Ошибка при удалении", show_alert=True)
 
 # --- ВРЕМЕННЫЙ ТЕСТОВЫЙ ХЕНДЛЕР ДЛЯ ПЕНТЕСТА ---
 # TODO: Удалить после проверки защиты

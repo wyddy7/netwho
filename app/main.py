@@ -10,12 +10,22 @@ from app.config import settings
 from app.handlers import base, voice, text, settings as settings_handler, profile, onboarding
 from app.services.user_service import user_service
 from app.services.recall_service import recall_service
+from app.infrastructure.supabase.client import get_supabase
 
 # Твой ID для уведомлений (можно вынести в .env, но пока так)
 ADMIN_ID = 6108932752
 
 async def on_startup(bot: Bot):
     logger.info("Bot started! Polling...")
+    
+    # Инициализируем Supabase клиент при старте (чтобы сразу видеть в логах, какой ключ используется)
+    try:
+        supabase_client = get_supabase()
+        logger.info("Supabase client initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Supabase client: {e}")
+        raise
+    
     try:
         # Уведомляем админа
         await bot.send_message(

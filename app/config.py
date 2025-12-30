@@ -4,13 +4,8 @@ from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
-# Настройка логгера
+# Настройка логгера (будет обновлена после загрузки settings)
 logger.remove()
-logger.add(
-    sys.stderr,
-    level="DEBUG",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
-)
 
 class Settings(BaseSettings):
     # Telegram
@@ -18,7 +13,8 @@ class Settings(BaseSettings):
 
     # Supabase
     SUPABASE_URL: str
-    SUPABASE_KEY: str
+    SUPABASE_KEY: str  # Deprecated, use SUPABASE_SERVICE_ROLE_KEY
+    SUPABASE_SERVICE_ROLE_KEY: str | None = None
 
     # AI (OpenRouter / OpenAI)
     OPENROUTER_API_KEY: str
@@ -36,6 +32,7 @@ class Settings(BaseSettings):
 
     # App Settings
     CHAT_HISTORY_DEPTH: int = 10
+    LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     
     # Freemium / Monetization Settings
     TRIAL_DAYS: int = 3
@@ -65,4 +62,11 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-logger.info("Configuration loaded successfully")
+# Настраиваем логгер с уровнем из .env
+logger.add(
+    sys.stderr,
+    level=settings.LOG_LEVEL,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+)
+
+logger.info(f"Configuration loaded successfully (LOG_LEVEL={settings.LOG_LEVEL})")

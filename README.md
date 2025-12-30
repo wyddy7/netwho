@@ -32,9 +32,11 @@
 | :--- | :---: | :--- |
 | `BOT_TOKEN` | ✅ | Токен от [@BotFather](https://t.me/BotFather) |
 | `SUPABASE_URL` | ✅ | URL проекта Supabase |
-| `SUPABASE_KEY` | ✅ | **Service Role** ключ (для доступа к БД) |
+| `SUPABASE_KEY` | ⚠️ | Устаревший, используй `SUPABASE_SERVICE_ROLE_KEY` |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | **Service Role** ключ (обходит RLS, для доступа к БД) |
 | `OPENROUTER_API_KEY` | ✅ | Ключ OpenRouter (или OpenAI) |
 | `ADMIN_ID` | ✅ | Telegram ID владельца (для админ-команд) |
+| `LOG_LEVEL` | ❌ | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR` (дефолт: `INFO`) |
 | `GROQ_API_KEY` | ❌ | Для распознавания ГС (если не задан — войсы игнорируются) |
 | `LLM_MODEL` | ❌ | Дефолт: `openai/gpt-4o-mini` |
 
