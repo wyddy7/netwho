@@ -195,8 +195,14 @@ class AIService:
         """Вспомогательный метод для логирования промптов."""
         logger.info("--- LLM PROMPT START ---")
         for i, m in enumerate(messages):
-            role = m.get("role", "unknown")
-            content = m.get("content", "")
+            if isinstance(m, dict):
+                role = m.get("role", "unknown")
+                content = m.get("content", "")
+            else:
+                # ChatCompletionMessage object or similar
+                role = getattr(m, "role", "unknown")
+                content = getattr(m, "content", "")
+            
             # Укорачиваем для логов если слишком длинно, но оставляем достаточно контекста
             snippet = (content[:500] + "...") if isinstance(content, str) and len(content) > 500 else content
             logger.info(f"Message {i} | Role: {role} | Content: {snippet}")
@@ -266,25 +272,45 @@ class AIService:
         if not candidates:
             return []
             
-        # Если запрос "все", "all", то не фильтруем (это обрабатывается в search_service, но на всякий случай)
-        if query.strip() == "*" or query.lower() in ["все", "all", "все контакты"]:
+        # Убираем технические префиксы для LLM
+        clean_query = query.replace("org:", "").strip()
+        
+        # Если запрос "все", "all", то не фильтруем
+        if clean_query.strip() == "*" or clean_query.lower() in ["все", "all", "все контакты"]:
             return candidates
 
-        # Формируем компактный список для LLM
-        candidates_list = [
-            {"id": str(c.id), "name": c.name, "summary": c.summary, "meta": c.meta}
-            for c in candidates
-        ]
+        # Формируем компактный список для LLM с обогащением (Story 18 - Fix Reranker)
+        candidates_list = []
+        for c in candidates:
+            # Копируем метаданные, чтобы не менять оригинал
+            meta_dict = c.meta.copy() if isinstance(c.meta, dict) else (c.meta.model_dump() if hasattr(c.meta, 'model_dump') else {})
+            
+            # ВАЖНО: Если есть привязка к организации, ЯВНО прописываем это в meta для LLM.
+            # Иначе LLM видит "company: null" и фильтрует контакт, хотя он из нужной орги.
+            if c.org_name:
+                if not meta_dict.get("company"):
+                    meta_dict["company"] = c.org_name
+                # Дополнительное поле контекста, чтобы LLM точно заметила
+                meta_dict["_org_context"] = f"Member of organization: {c.org_name}"
+
+            candidates_list.append({
+                "id": str(c.id), 
+                "name": c.name, 
+                "summary": c.summary, 
+                "meta": meta_dict
+            })
         
         system_prompt = (
-            "You are a strict relevance filter. "
+            "You are a relevance filter. "
             "Your task is to analyze the user's search query and the list of candidate contacts.\n"
-            "Return a JSON object with key 'relevant_ids' containing a list of UUIDs (strings) of contacts that are STRICTLY relevant to the query.\n"
-            "If a contact matches loosely but is not what the user asked for (e.g. name match but wrong context, or wrong company), exclude it.\n"
+            "Return a JSON object with key 'relevant_ids' containing a list of UUIDs (strings) of contacts that are relevant to the query.\n"
+            "Consider synonyms and professional context (e.g. 'гошник' is a Go/Golang developer).\n"
+            "Pay attention to '_org_context' or 'company' fields for organization membership.\n"
+            "If a contact matches loosely but is definitely not what the user asked for, exclude it.\n"
             "If no contacts are relevant, return empty list."
         )
         
-        user_content = f"Query: {query}\nCandidates: {json.dumps(candidates_list, ensure_ascii=False)}"
+        user_content = f"Query: {clean_query}\nCandidates: {json.dumps(candidates_list, ensure_ascii=False)}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}

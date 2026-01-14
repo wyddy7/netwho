@@ -1,3 +1,4 @@
+import re
 from uuid import UUID
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
@@ -206,34 +207,35 @@ class SearchService:
 
     async def search(self, query: str, user_id: int, limit: int = 10) -> list[SearchResult]:
         try:
+            # 1. Попытка выделить организацию из запроса (Story 16)
+            # Если запрос начинается с org: или содержит его, пробуем поиск по орге
             q = query.strip()
             q_lower = q.lower()
+            
+            org_id = None
+            org_name_query = None
 
-            # Org scoped list: query like "org:<org_name>"
-            if q_lower.startswith("org:"):
-                org_name_query = q[4:].strip()
-                if not org_name_query:
-                    return []
-
-                orgs = await self.get_user_orgs(user_id)
-                matched_org = None
-                for org in orgs:
-                    name = (org.get("name") or "").strip()
-                    if name and name.lower() == org_name_query.lower():
-                        matched_org = org
-                        break
-                if not matched_org:
-                    # fallback: substring match
+            if "org:" in q_lower:
+                # Извлекаем название орги. Может быть "org:skop" или "кто в org:skop"
+                # Ищем подстроку после org: до пробела или конца
+                match = re.search(r'org:(\S+)', q_lower)
+                if match:
+                    org_name_query = match.group(1)
+                    # Чистим основной запрос от префикса для дальнейшего поиска
+                    q = q.replace(f"org:{org_name_query}", "").strip()
+                    if not q: q = "*" # Если был только org:skop, ищем всех в этой орге
+                
+                # Ищем ID организации
+                if org_name_query:
+                    orgs = await self.get_user_orgs(user_id)
                     for org in orgs:
-                        name = (org.get("name") or "").strip()
-                        if name and org_name_query.lower() in name.lower():
-                            matched_org = org
+                        if org_name_query == org['name'].lower() or org_name_query in org['name'].lower():
+                            org_id = org['id']
                             break
 
-                if not matched_org:
-                    return []
-
-                org_id = matched_org.get("id")
+            # 2. Если организация найдена, и запрос был только про неё (или "все"), 
+            # возвращаем список контактов этой организации
+            if org_id and (q == "*" or not q):
                 response = self.supabase.table("contacts")\
                     .select("id, name, summary, meta, org_id, organizations(name)")\
                     .eq("org_id", str(org_id))\
@@ -242,36 +244,58 @@ class SearchService:
                     .limit(limit)\
                     .execute()
 
-                if not response.data:
-                    return []
-
                 results: list[SearchResult] = []
                 for item in response.data:
                     org_rel = item.get("organizations")
-                    org_name = None
-                    if isinstance(org_rel, dict):
-                        org_name = org_rel.get("name")
+                    item["org_name"] = org_rel.get("name") if isinstance(org_rel, dict) else None
                     item.pop("organizations", None)
-                    item["org_name"] = org_name
                     results.append(SearchResult(**item))
                 return results
 
+            # 3. Гибридный поиск по оставшемуся запросу
+            q_lower = q.lower()
+            
             # ХАК: Если запрос похож на "покажи всех", вызываем get_recent_contacts
             if q == "*" or q_lower in ["все", "all", "все контакты"]:
-                logger.info(f"Fetching recent contacts for user {user_id}")
                 return await self.get_recent_contacts(user_id, limit)
 
-            logger.debug(f"Searching for '{q}' for user {user_id}...")
+            logger.debug(f"Searching for '{q}' (org_id={org_id}) for user {user_id}...")
             
             # --- TRUE HYBRID SEARCH (SQL + Vector) ---
             
             # 1. SQL Search (Exact/Partial Match) - Priority 1
             sql_results = []
             try:
+                # 1.1 Поиск по имени и описанию через RPC
                 response = await self.repo.search(user_id, q)
                 if response.data:
                     sql_results = [SearchResult(**item) for item in response.data]
-                    logger.debug(f"SQL Search found {len(sql_results)} items")
+                    logger.debug(f"SQL Search found {len(sql_results)} items via RPC")
+                
+                # 1.2 Если мы в контексте конкретной организации, фильтруем или добавляем её
+                if org_id:
+                    # Фильтруем SQL результаты, оставляя только те, что в этой орге
+                    sql_results = [r for r in sql_results if str(r.org_id) == str(org_id)]
+                else:
+                    # Ищем организации пользователя, подходящие под запрос
+                    user_orgs = await self.get_user_orgs(user_id)
+                    matched_org_ids = [str(org['id']) for org in user_orgs if q_lower in org['name'].lower()]
+                    
+                    if matched_org_ids:
+                        org_response = self.supabase.table("contacts")\
+                            .select("id, name, summary, meta, org_id, organizations(name)")\
+                            .in_("org_id", matched_org_ids)\
+                            .eq("is_archived", False)\
+                            .execute()
+                        
+                        if org_response.data:
+                            for item in org_response.data:
+                                org_rel = item.get("organizations")
+                                item["org_name"] = org_rel.get("name") if isinstance(org_rel, dict) else None
+                                item.pop("organizations", None)
+                                res = SearchResult(**item)
+                                if not any(r.id == res.id for r in sql_results):
+                                    sql_results.append(res)
             except Exception as e:
                 logger.error(f"SQL Search failed: {e}")
 
@@ -279,24 +303,22 @@ class SearchService:
             vector_results = []
             try:
                 from app.services.ai_service import ai_service
-                
-                # Get embedding for the query
                 embedding = await ai_service.get_embedding(q)
                 
                 if embedding:
                     params = {
                         "query_embedding": embedding,
                         "match_user_id": user_id,
-                        "match_threshold": 0.5, # Strict threshold
+                        "match_threshold": 0.2, # Еще ниже порог для гибкости (Story 18)
                         "match_count": limit
                     }
                     
-                    # Call the new secure match_contacts RPC (v3)
                     vec_response = self.supabase.rpc("match_contacts", params).execute()
-                    
                     if vec_response.data:
                         vector_results = [SearchResult(**item) for item in vec_response.data]
-                        logger.debug(f"Vector Search found {len(vector_results)} items")
+                        # Если есть org_id, фильтруем
+                        if org_id:
+                            vector_results = [r for r in vector_results if str(r.org_id) == str(org_id)]
             except Exception as e:
                 logger.error(f"Vector Search failed: {e}")
 
