@@ -190,11 +190,11 @@ async def cmd_create_org(message: types.Message):
     org_name = args[1].strip('"').strip("'")
     
     # We need Repo. 
-    # Use get_supabase() and ContactRepository(supabase)
+    # Use get_supabase() and OrgRepository(supabase)
     from app.infrastructure.supabase.client import get_supabase
-    from app.repositories.contact_repo import ContactRepository
+    from app.repositories.org_repo import OrgRepository
     
-    repo = ContactRepository(get_supabase())
+    repo = OrgRepository(get_supabase())
     
     try:
         result = await repo.create_org(org_name, message.from_user.id)

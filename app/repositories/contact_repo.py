@@ -46,51 +46,8 @@ class ContactRepository:
         
         return self.db.table('contacts').insert(contact_data).execute()
 
-    async def get_user_orgs(self, user_id: int):
-        """
-        Returns list of orgs user belongs to.
-        Optimization: Join with organizations table to get names
-        """
-        # Return format: [{'id': uuid, 'name': 'Python Heroes'}, ...]
-        try:
-            res = self.db.table('organization_members').select('org_id, organizations(name)').eq('user_id', user_id).execute()
-            
-            return [
-                {'id': row['org_id'], 'name': row['organizations']['name']} 
-                for row in res.data if row.get('organizations')
-            ]
-        except Exception as e:
-            logger.error(f"Error fetching user orgs: {e}")
-            return []
-
     async def search(self, user_id: int, query: str):
         """
         Hybrid search (Story 15)
         """
         return self.db.rpc('search_hybrid', {'p_user_id': user_id, 'p_query': query}).execute()
-
-    async def create_org(self, name: str, owner_id: int):
-        """
-        Creates an organization and adds owner. (Story 17)
-        """
-        try:
-            # 1. Create Org
-            res = self.db.table('organizations').insert({'name': name, 'owner_id': owner_id}).execute()
-            if not res.data:
-                raise ValueError("Failed to create org")
-            
-            org_id = res.data[0]['id']
-            invite_code = res.data[0]['invite_code']
-            
-            # 2. Add Owner as Member
-            self.db.table('organization_members').insert({
-                'user_id': owner_id, 
-                'org_id': org_id,
-                'role': 'owner',
-                'status': 'approved'
-            }).execute()
-            
-            return {'id': org_id, 'invite_code': invite_code}
-        except Exception as e:
-            logger.error(f"Create Org failed: {e}")
-            raise

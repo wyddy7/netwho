@@ -55,6 +55,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
 
     logger.info(f"User {user.id} started bot (Onboarding)")
     
+    # 1. Parse Deep Link (Story 21)
+    # Format: /start join_UUID
+    org_join_id = None
+    args = message.text.split()
+    if len(args) > 1 and args[1].startswith("join_"):
+        org_join_id = args[1].replace("join_", "")
+        logger.info(f"User {user.id} attempting to join org via deep link: {org_join_id}")
+
     # Register/Update user
     try:
         # Check if user exists BEFORE upsert
@@ -71,12 +79,24 @@ async def cmd_start(message: types.Message, state: FSMContext):
         if not existing_user:
             await user_service.grant_trial(user.id, settings.TRIAL_DAYS)
             logger.info(f"Granted {settings.TRIAL_DAYS}-day trial to new user {user.id}")
-            # Explicit refresh: перечитываем пользователя после обновления подписки
-            # чтобы получить актуальный статус (fix cache invalidation problem)
+            # Explicit refresh
             existing_user = await user_service.get_user(user.id)
         
+        # 2. Process Join Org (Story 21)
+        if org_join_id:
+            join_res = await user_service.join_org(user.id, org_join_id)
+            if join_res["status"] == "joined":
+                await message.answer(
+                    f"Добро пожаловать в <b>{join_res['org_name']}</b>! 🎉\n\n"
+                    "Твоя заявка на участие отправлена. Администратор скоро подтвердит доступ.\n"
+                    f"Пока ты можешь использовать {settings.FREE_NEWS_JACKS_LIMIT} демо-поиска."
+                )
+            elif join_res["status"] == "already_member":
+                await message.answer(f"Ты уже участник организации <b>{join_res['org_name']}</b>.")
+            elif join_res["status"] == "not_found":
+                await message.answer("⚠ Организация по ссылке не найдена.")
+
         # Check if already onboarded (if bio exists)
-        # We check existing_user (state before upsert) or fetch fresh
         if existing_user and existing_user.bio:
             await message.answer(
                 f"С возвращением, {user.full_name}! 👋\n"

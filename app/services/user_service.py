@@ -309,4 +309,22 @@ class UserService:
             logger.error(f"Failed to delete last {count} messages: {e}")
             return 0
 
+    async def join_org(self, user_id: int, org_id: str) -> dict:
+        """
+        Adds user to organization as 'pending'.
+        Returns dict with status and org_name.
+        """
+        from app.repositories.org_repo import OrgRepository
+        repo = OrgRepository(self.supabase)
+        
+        org = await repo.get_org_by_id(org_id)
+        if not org:
+            return {"status": "not_found", "org_name": None}
+            
+        success = await repo.add_member(user_id, org_id, status='pending')
+        if not success:
+            return {"status": "already_member", "org_name": org['name']}
+            
+        return {"status": "joined", "org_name": org['name']}
+
 user_service = UserService()

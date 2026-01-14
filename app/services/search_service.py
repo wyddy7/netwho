@@ -4,6 +4,7 @@ from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
 from app.schemas import ContactCreate, ContactInDB, SearchResult
 from app.repositories.contact_repo import ContactRepository
+from app.repositories.org_repo import OrgRepository
 
 class AccessDenied(Exception):
     """Исключение при отсутствии прав доступа к ресурсу."""
@@ -13,6 +14,7 @@ class SearchService:
     def __init__(self):
         self.supabase = get_supabase()
         self.repo = ContactRepository(self.supabase)
+        self.org_repo = OrgRepository(self.supabase)
 
     async def create_contact(self, contact_data: ContactCreate) -> ContactInDB:
         try:
@@ -47,7 +49,7 @@ class SearchService:
             raise
 
     async def get_user_orgs(self, user_id: int):
-        return await self.repo.get_user_orgs(user_id)
+        return await self.org_repo.get_user_orgs(user_id)
 
     async def get_contact_by_id(self, contact_id: UUID | str, user_id: int) -> ContactInDB | None:
         """
