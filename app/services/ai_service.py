@@ -23,7 +23,7 @@ TOOLS_SCHEMA = [
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Поисковый запрос (имя, профессия, контекст). Для 'всех' используй 'все контакты'."
+                        "description": "Поисковый запрос. ВАЖНО: 1) Используй ТОЛЬКО ключевые слова (имя, профессия), удаляй мусорные слова ('найди', 'кто есть'). 2) Для поиска внутри организации используй формат 'org:НазваниеОрги' (например: 'org:skop')."
                     }
                 },
                 "required": ["query"]
@@ -145,10 +145,12 @@ class AIService:
 
     async def get_embedding(self, text: str) -> list[float]:
         try:
+            logger.info(f"LLM Embedding Request | Input: {text}")
             response = await self.llm_client.embeddings.create(
                 model=settings.EMBEDDING_MODEL,
                 input=text
             )
+            logger.info(f"LLM Embedding Response | Vector Size: {len(response.data[0].embedding)}")
             return response.data[0].embedding
         except Exception as e:
             logger.error(f"Embedding failed: {e}")
@@ -172,7 +174,7 @@ class AIService:
                 http_client=self.http_client
             )
 
-            logger.debug(f"Starting transcription for file: {file_path}")
+            logger.info(f"STT Request | File: {file_path}")
 
             with open(file_path, "rb") as audio_file:
                 transcription = await client.audio.transcriptions.create(
@@ -182,12 +184,23 @@ class AIService:
                     language="ru",
                     temperature=0.0
                 )
-            logger.debug(f"Transcription result: '{transcription.text}'")
+            logger.info(f"STT Response | Text: '{transcription.text}'")
             return transcription.text
         except Exception as e:
             logger.error(f"STT failed: {e}")
             logger.error(f"Error type: {type(e)}")
             return ""
+
+    def _log_llm_messages(self, messages: list):
+        """Вспомогательный метод для логирования промптов."""
+        logger.info("--- LLM PROMPT START ---")
+        for i, m in enumerate(messages):
+            role = m.get("role", "unknown")
+            content = m.get("content", "")
+            # Укорачиваем для логов если слишком длинно, но оставляем достаточно контекста
+            snippet = (content[:500] + "...") if isinstance(content, str) and len(content) > 500 else content
+            logger.info(f"Message {i} | Role: {role} | Content: {snippet}")
+        logger.info("--- LLM PROMPT END ---")
 
     async def extract_contact_info(self, text: str) -> ContactExtracted:
         """
@@ -200,12 +213,16 @@ class AIService:
         ]
         
         try:
+            logger.info(f"LLM Extract Request | Model: {settings.LLM_MODEL}")
+            self._log_llm_messages(messages)
+            
             response = await self.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
                 messages=messages,
                 response_format={"type": "json_object"}
             )
             content = response.choices[0].message.content
+            logger.info(f"LLM Extract Response | Content: {content}")
             data = json.loads(content)
             return ContactExtracted(**data)
         except Exception as e:
@@ -225,12 +242,16 @@ class AIService:
         ]
         
         try:
+            logger.info(f"LLM Refine Request | Model: {settings.LLM_MODEL}")
+            self._log_llm_messages(messages)
+            
             response = await self.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
                 messages=messages,
                 response_format={"type": "json_object"}
             )
             content = response.choices[0].message.content
+            logger.info(f"LLM Refine Response | Content: {content}")
             data = json.loads(content)
             return ContactExtracted(**data)
         except Exception as e:
@@ -264,24 +285,29 @@ class AIService:
         )
         
         user_content = f"Query: {query}\nCandidates: {json.dumps(candidates_list, ensure_ascii=False)}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content}
+        ]
         
         try:
+            logger.info(f"LLM Rerank Request | Query: {query} | Candidates Count: {len(candidates)}")
+            self._log_llm_messages(messages)
+            
             response = await self.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content}
-                ],
+                messages=messages,
                 response_format={"type": "json_object"}
             )
             
             content = response.choices[0].message.content
+            logger.info(f"LLM Rerank Response | Content: {content}")
             data = json.loads(content)
             relevant_ids = set(data.get("relevant_ids", []))
             
             filtered = [c for c in candidates if str(c.id) in relevant_ids]
             
-            logger.info(f"Rerank: {len(candidates)} -> {len(filtered)}")
+            logger.info(f"Rerank Result: {len(candidates)} -> {len(filtered)}")
             return filtered
             
         except Exception as e:
@@ -299,16 +325,22 @@ class AIService:
             "Example input: 'Я продакт менеджер, делаю стартап в крипте, ищу инвесторов' "
             "Example output: 'Product Manager в крипто-стартапе. Интересы: инвестиции, блокчейн.'"
         )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text}
+        ]
         
         try:
+            logger.info(f"LLM Bio Request | Text: {text}")
+            self._log_llm_messages(messages)
+            
             response = await self.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text}
-                ]
+                messages=messages
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            logger.info(f"LLM Bio Response | Content: {content}")
+            return content
         except Exception as e:
             logger.error(f"Bio extraction failed: {e}")
             return text  # Fallback to raw text
@@ -346,6 +378,9 @@ class AIService:
                 step_count += 1
                 
                 # Запрос к LLM
+                logger.info(f"LLM Router Request | Step {step_count} | User: {user_id}")
+                self._log_llm_messages(messages)
+                
                 response = await self.llm_client.chat.completions.create(
                     model=settings.LLM_MODEL,
                     messages=messages,
@@ -355,6 +390,13 @@ class AIService:
                 
                 msg = response.choices[0].message
                 messages.append(msg) # Добавляем ответ ассистента в контекст текущей сессии
+                
+                # Логируем ответ
+                if msg.content:
+                    logger.info(f"LLM Router Response | Content: {msg.content}")
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        logger.info(f"LLM Router Tool Call | {tc.function.name}({tc.function.arguments})")
                 
                 # Если нет вызова инструментов - это финальный текстовый ответ
                 if not msg.tool_calls:
@@ -383,7 +425,7 @@ class AIService:
                 fn_name = tool_call.function.name
                 fn_args = json.loads(tool_call.function.arguments)
                 
-                logger.info(f"Agent called step {step_count}: {fn_name}")
+                logger.info(f"Agent executing tool: {fn_name}")
                 
                 # Сохраняем факт вызова в БД
                 tool_summary = f"[Tool Used: {fn_name}, Args: {json.dumps(fn_args, ensure_ascii=False)}]"
@@ -452,6 +494,7 @@ class AIService:
                                 "tool_call_id": tool_call.id,
                                 "content": tool_result_content
                             })
+                            logger.info(f"Tool Result | {fn_name} | WARNING: Duplicates found")
                             continue # Переход к следующему шагу цикла (LLM увидит предупреждение)
 
                     full_text = f"{extracted.name} {extracted.summary} {extracted.meta}"
@@ -568,6 +611,9 @@ class AIService:
                     else:
                         tool_result_content = "У пользователя НЕТ активной Pro подписки. Предложи купить через /buy_pro."
 
+                # Логируем результат инструмента
+                logger.info(f"Tool Result | {fn_name} | Content: {tool_result_content[:200]}...")
+
                 # Добавляем результат инструмента в messages для следующего шага LLM
                 messages.append({
                     "role": "tool",
@@ -590,6 +636,9 @@ class AIService:
             })
             
             # Делаем финальный запрос без инструментов (force text)
+            logger.info(f"LLM Router Final Request | User: {user_id}")
+            self._log_llm_messages(messages)
+            
             final_response = await self.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
                 messages=messages,
@@ -597,15 +646,12 @@ class AIService:
             )
             
             final_content = final_response.choices[0].message.content
+            logger.info(f"LLM Router Final Response | Content: {final_content}")
             if final_content:
                 await user_service.save_chat_message(user_id, "assistant", final_content)
                 return final_content
             else:
                 return "⚠ Бот устал и прилег отдохнуть (Max Steps Error)."
-
-        except Exception as e:
-            logger.error(f"Router Agent failed: {e}")
-            return "Произошла ошибка (Agent Error)."
 
         except Exception as e:
             logger.error(f"Router Agent failed: {e}")

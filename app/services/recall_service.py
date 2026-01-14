@@ -72,6 +72,14 @@ class RecallService:
         user_content = f"{user_context}\n\nContacts List:\n{contacts_str}"
 
         try:
+            logger.info(f"LLM Recall Request | User Context: {user_context[:200]}...")
+            
+            # Логируем промпты через ai_service хелпер (так как мы используем его клиент)
+            ai_service._log_llm_messages([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ])
+
             response = await ai_service.llm_client.chat.completions.create(
                 model=settings.LLM_MODEL,
                 messages=[
@@ -80,6 +88,7 @@ class RecallService:
                 ]
             )
             content = response.choices[0].message.content.strip()
+            logger.info(f"LLM Recall Response | Content: {content}")
             
             # Очистка
             content = content.replace("**", "")
