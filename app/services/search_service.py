@@ -179,7 +179,7 @@ class SearchService:
         try:
             logger.debug(f"[get_recent_contacts] user_id={user_id}, limit={limit}")
             response = self.supabase.table("contacts")\
-                .select("id, name, summary, meta, org_id")\
+                .select("id, name, summary, meta, org_id, organizations(name)")\
                 .eq("user_id", user_id)\
                 .eq("is_archived", False)\
                 .order("created_at", desc=True)\
@@ -191,8 +191,17 @@ class SearchService:
             
             if not response.data:
                 return []
-            
-            results = [SearchResult(**item) for item in response.data]
+
+            results: list[SearchResult] = []
+            for item in response.data:
+                org_rel = item.get("organizations")
+                org_name = None
+                if isinstance(org_rel, dict):
+                    org_name = org_rel.get("name")
+                item.pop("organizations", None)
+                item["org_name"] = org_name
+                results.append(SearchResult(**item))
+
             return results
         except Exception as e:
             logger.error(f"[get_recent_contacts] Exception: {e}", exc_info=True)
@@ -200,16 +209,66 @@ class SearchService:
 
     async def search(self, query: str, user_id: int, limit: int = 10) -> list[SearchResult]:
         try:
+            q = query.strip()
+            q_lower = q.lower()
+
+            # Org scoped list: query like "org:<org_name>"
+            if q_lower.startswith("org:"):
+                org_name_query = q[4:].strip()
+                if not org_name_query:
+                    return []
+
+                orgs = await self.get_user_orgs(user_id)
+                matched_org = None
+                for org in orgs:
+                    name = (org.get("name") or "").strip()
+                    if name and name.lower() == org_name_query.lower():
+                        matched_org = org
+                        break
+                if not matched_org:
+                    # fallback: substring match
+                    for org in orgs:
+                        name = (org.get("name") or "").strip()
+                        if name and org_name_query.lower() in name.lower():
+                            matched_org = org
+                            break
+
+                if not matched_org:
+                    return []
+
+                org_id = matched_org.get("id")
+                response = self.supabase.table("contacts")\
+                    .select("id, name, summary, meta, org_id, organizations(name)")\
+                    .eq("org_id", str(org_id))\
+                    .eq("is_archived", False)\
+                    .order("created_at", desc=True)\
+                    .limit(limit)\
+                    .execute()
+
+                if not response.data:
+                    return []
+
+                results: list[SearchResult] = []
+                for item in response.data:
+                    org_rel = item.get("organizations")
+                    org_name = None
+                    if isinstance(org_rel, dict):
+                        org_name = org_rel.get("name")
+                    item.pop("organizations", None)
+                    item["org_name"] = org_name
+                    results.append(SearchResult(**item))
+                return results
+
             # ХАК: Если запрос похож на "покажи всех", вызываем get_recent_contacts
-            if query.strip() == "*" or query.lower() in ["все", "all", "все контакты"]:
+            if q == "*" or q_lower in ["все", "all", "все контакты"]:
                 logger.info(f"Fetching recent contacts for user {user_id}")
                 return await self.get_recent_contacts(user_id, limit)
 
-            logger.debug(f"Searching for '{query}' for user {user_id}...")
+            logger.debug(f"Searching for '{q}' for user {user_id}...")
             
             # Using Repo Hybrid Search (Story 15)
             # Calls the search_hybrid RPC
-            response = await self.repo.search(user_id, query)
+            response = await self.repo.search(user_id, q)
             
             if not response.data:
                 logger.debug("No matches found")

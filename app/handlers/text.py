@@ -42,7 +42,13 @@ async def handle_agent_response(message: types.Message, response):
             
             for res in response:
                 short_id = str(res.id)[:5]
-                item_str = f"🆔 <code>{short_id}</code> | 👤 <b>{res.name}</b>"
+                org_name = getattr(res, "org_name", None)
+                if org_name:
+                    scope_badge = f" <i>📢 {org_name}</i>"
+                else:
+                    scope_badge = " <i>🔒 Личное</i>"
+
+                item_str = f"🆔 <code>{short_id}</code> | 👤 <b>{res.name}</b>{scope_badge}"
                 if res.summary:
                     item_str += f"\n📝 {res.summary}"
                 items_text.append(item_str)
@@ -61,10 +67,9 @@ async def handle_agent_response(message: types.Message, response):
                 return
 
             request_id = generate_request_id()
-            pending_actions[user_id] = {"type": "add", "data": response, "request_id": request_id}
-            
             # --- Story 16: Scope Selection ---
             orgs = await search_service.get_user_orgs(user_id)
+            pending_actions[user_id] = {"type": "add", "data": response, "request_id": request_id, "orgs": orgs}
             
             builder = InlineKeyboardBuilder()
             
@@ -413,20 +418,32 @@ async def on_scope_select(callback: types.CallbackQuery):
     
     draft = action["data"]
     org_name = "Личное"
+    org_id = None
     
     if scope_value == "personal":
         draft.org_id = None
     else:
         draft.org_id = scope_value
-        org_name = "Организацию"
+        org_id = scope_value
+        orgs = action.get("orgs") or []
+        for org in orgs:
+            if str(org.get("id")) == str(scope_value):
+                org_name = org.get("name") or "Организация"
+                break
+        else:
+            org_name = "Организация"
     
     try:
         contact_db = await search_service.create_contact(draft)
         await callback.message.edit_text(
-            f"✅ <b>Записал в {org_name}:</b> {draft.name}\n\n📝 {draft.summary}"
+            f"✅ <b>Записал в {'📢 ' + org_name if org_id else '🔒 Личное'}:</b> {draft.name}\n\n📝 {draft.summary}"
         )
         await callback.answer("Сохранено!")
-        await user_service.save_chat_message(user_id, "system", f"[System] Contact created in {scope_value}.")
+        await user_service.save_chat_message(
+            user_id,
+            "system",
+            f"[System] Contact '{draft.name}' created in scope={scope_value} org_name={org_name}."
+        )
     except Exception as e:
         logger.error(f"Scope save error: {e}")
         await callback.answer("Ошибка сохранения", show_alert=True)
