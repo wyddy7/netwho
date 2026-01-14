@@ -186,9 +186,6 @@ class SearchService:
                 .limit(limit)\
                 .execute()
             
-            count = len(response.data) if response.data else 0
-            logger.debug(f"[get_recent_contacts] Found {count} contacts")
-            
             if not response.data:
                 return []
 
@@ -266,16 +263,65 @@ class SearchService:
 
             logger.debug(f"Searching for '{q}' for user {user_id}...")
             
-            # Using Repo Hybrid Search (Story 15)
-            # Calls the search_hybrid RPC
-            response = await self.repo.search(user_id, q)
+            # --- TRUE HYBRID SEARCH (SQL + Vector) ---
             
-            if not response.data:
-                logger.debug("No matches found")
-                return []
+            # 1. SQL Search (Exact/Partial Match) - Priority 1
+            sql_results = []
+            try:
+                response = await self.repo.search(user_id, q)
+                if response.data:
+                    sql_results = [SearchResult(**item) for item in response.data]
+                    logger.debug(f"SQL Search found {len(sql_results)} items")
+            except Exception as e:
+                logger.error(f"SQL Search failed: {e}")
+
+            # 2. Vector Search (Semantic) - Priority 2
+            vector_results = []
+            try:
+                from app.services.ai_service import ai_service
                 
-            logger.debug(f"Found {len(response.data)} matches")
-            return [SearchResult(**item) for item in response.data]
+                # Get embedding for the query
+                embedding = await ai_service.get_embedding(q)
+                
+                if embedding:
+                    params = {
+                        "query_embedding": embedding,
+                        "match_user_id": user_id,
+                        "match_threshold": 0.5, # Strict threshold
+                        "match_count": limit
+                    }
+                    
+                    # Call the new secure match_contacts RPC (v3)
+                    vec_response = self.supabase.rpc("match_contacts", params).execute()
+                    
+                    if vec_response.data:
+                        vector_results = [SearchResult(**item) for item in vec_response.data]
+                        logger.debug(f"Vector Search found {len(vector_results)} items")
+            except Exception as e:
+                logger.error(f"Vector Search failed: {e}")
+
+            # 3. Merge & Deduplicate
+            # Use a dict to keep unique contacts, preserving order (SQL first)
+            seen_ids = set()
+            final_results = []
+
+            # Add SQL results first (they are more "exact")
+            for res in sql_results:
+                if res.id not in seen_ids:
+                    final_results.append(res)
+                    seen_ids.add(res.id)
+            
+            # Add Vector results (only if not seen)
+            for res in vector_results:
+                if res.id not in seen_ids:
+                    final_results.append(res)
+                    seen_ids.add(res.id)
+            
+            # Limit total results
+            final_results = final_results[:limit]
+            
+            logger.info(f"Hybrid Search Total: {len(final_results)} (SQL: {len(sql_results)}, Vector: {len(vector_results)})")
+            return final_results
             
         except Exception as e:
             logger.error(f"Search failed: {e}")
