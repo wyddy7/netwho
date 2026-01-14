@@ -275,8 +275,10 @@ class AIService:
         # Убираем технические префиксы для LLM
         clean_query = query.replace("org:", "").strip()
         
-        # Если запрос "все", "all", то не фильтруем
-        if clean_query.strip() == "*" or clean_query.lower() in ["все", "all", "все контакты"]:
+        # Если запрос "все", "all" или очень короткий (1-2 символа), то не фильтруем.
+        # Короткие запросы обычно буквенные (поиск по инициалу), LLM часто ошибается в них.
+        if clean_query.strip() == "*" or clean_query.lower() in ["все", "all", "все контакты"] or len(clean_query) < 3:
+            logger.debug(f"Skipping rerank for short or special query: '{clean_query}'")
             return candidates
 
         # Формируем компактный список для LLM с обогащением (Story 18 - Fix Reranker)
@@ -440,9 +442,12 @@ class AIService:
                         await user_service.save_chat_message(user_id, "assistant", final_text)
                     
                     # ХАК: Если у нас в "кармане" есть список контактов от предыдущего шага поиска,
-                    # и финальный ответ это просто текст, то вернем список, чтобы показались кнопки!
+                    # и финальный ответ слишком короткий или отсутствует, то вернем список, чтобы показались кнопки.
+                    # Но если ИИ написал содержательный ответ, то НЕ перебиваем его списком.
                     if last_tool_list_result and isinstance(last_tool_list_result, list) and len(last_tool_list_result) > 0:
-                        return last_tool_list_result
+                        if not final_text or len(final_text) < 100:
+                            logger.info("Using last_tool_list_result instead of short final_text")
+                            return last_tool_list_result
                         
                     return final_text
 

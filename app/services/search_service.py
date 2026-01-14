@@ -16,6 +16,18 @@ class SearchService:
 
     async def create_contact(self, contact_data: ContactCreate) -> ContactInDB:
         try:
+            # 1. Security Check: Block 'pending' members from creating org contacts
+            if contact_data.org_id:
+                res = self.supabase.table('organization_members')\
+                    .select('status')\
+                    .eq('user_id', contact_data.user_id)\
+                    .eq('org_id', str(contact_data.org_id))\
+                    .execute()
+                
+                if res.data and res.data[0].get('status') == 'pending':
+                    logger.warning(f"[AUTH] Create blocked: user {contact_data.user_id} is pending in org {contact_data.org_id}")
+                    raise AccessDenied("Дождитесь подтверждения участия")
+
             data = contact_data.model_dump(exclude_none=True)
             logger.debug(f"[CREATE] Creating contact: name='{contact_data.name}', user_id={contact_data.user_id}, org_id={contact_data.org_id}")
             
@@ -67,11 +79,26 @@ class SearchService:
             db_owner_id = str(contact.user_id)
             request_user_id = str(user_id)
             
-            if db_owner_id != request_user_id:
-                # TODO: Check if user is member of contact's organization?
-                # For now, stick to strict ownership for editing/deleting?
-                # Story says: "User sees personal contacts... and org contacts".
-                # But editing rules are not fully specified yet. Assuming Owner/Admin logic or strict user_id for now.
+            # 4.1. Check Organization Access if applicable
+            if contact.org_id:
+                # If contact belongs to org, check if user is an APPROVED member
+                res = self.supabase.table('organization_members')\
+                    .select('status')\
+                    .eq('user_id', user_id)\
+                    .eq('org_id', str(contact.org_id))\
+                    .execute()
+                
+                if not res.data:
+                    logger.warning(f"[AUTH] Access Denied: user {user_id} not a member of org {contact.org_id}")
+                    return None
+                
+                if res.data[0].get('status') == 'pending':
+                    logger.info(f"[AUTH] Access Restricted: user {user_id} is pending in org {contact.org_id}")
+                    # For search/view, we might return None or something else. 
+                    # If it's pending, they shouldn't see it yet according to story.
+                    return None
+
+            elif db_owner_id != request_user_id:
                 logger.warning(f"[AUTH] Access Denied: contact_id={contact_id_str}, DB_Owner={contact.user_id}, Request_User={user_id}")
                 return None
             

@@ -321,13 +321,20 @@ async def on_action_confirm(callback: types.CallbackQuery):
     try:
         if action["type"] == "add":
             draft = action["data"]
-            contact_db = await search_service.create_contact(draft)
-            await callback.message.edit_text(
-                f"✅ <b>Записал:</b> {draft.name}\n\n📝 {draft.summary}"
-            )
-            await callback.answer("Сохранено!")
-            # System Feedback Loop
-            await user_service.save_chat_message(user_id, "system", f"[System] Contact '{draft.name}' (ID: {contact_db.id}) created successfully.")
+            try:
+                contact_db = await search_service.create_contact(draft)
+                await callback.message.edit_text(
+                    f"✅ <b>Записал:</b> {draft.name}\n\n📝 {draft.summary}"
+                )
+                await callback.answer("Сохранено!")
+                # System Feedback Loop
+                await user_service.save_chat_message(user_id, "system", f"[System] Contact '{draft.name}' (ID: {contact_db.id}) created successfully.")
+            except Exception as e:
+                from app.services.search_service import AccessDenied
+                if isinstance(e, AccessDenied):
+                    await callback.answer(str(e), show_alert=True)
+                else:
+                    raise
             
         elif action["type"] == "del":
             contact_id = action["data"]
@@ -445,8 +452,14 @@ async def on_scope_select(callback: types.CallbackQuery):
             f"[System] Contact '{draft.name}' created in scope={scope_value} org_name={org_name}."
         )
     except Exception as e:
-        logger.error(f"Scope save error: {e}")
-        await callback.answer("Ошибка сохранения", show_alert=True)
+        from app.services.search_service import AccessDenied
+        if isinstance(e, AccessDenied):
+            await callback.answer(str(e), show_alert=True)
+            # Re-show the scope selection? Or just let it be. 
+            # The pending_actions is already popped.
+        else:
+            logger.error(f"Scope save error: {e}")
+            await callback.answer("Ошибка сохранения", show_alert=True)
 
 # --- ЛОГИКА УДАЛЕНИЯ ЧЕРЕЗ КНОПКУ КОРЗИНЫ В СПИСКЕ ---
 
