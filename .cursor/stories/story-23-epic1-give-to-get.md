@@ -20,8 +20,8 @@
 
 ### 2. Counter Increment
 - [ ] При каждом успешном поиске в контексте орги:
-  - Увеличивать `free_searches_used` в `organization_members`
-  - Обновлять через `UPDATE organization_members SET free_searches_used = free_searches_used + 1 WHERE ...`
+  - Инкрементировать счетчик ТОЛЬКО если `status = 'pending'` и поиск привязан к конкретной `org_id`.
+  - Обновить через `UPDATE organization_members SET free_searches_used = free_searches_used + 1 WHERE user_id = :user_id AND org_id = :org_id AND status = 'pending'`
 
 ### 3. User Service Helper
 - [ ] Добавить в `app/services/user_service.py`:

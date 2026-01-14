@@ -13,21 +13,22 @@
 ### 1. Database Migration
 - [ ] Создать `migrations/migration_epic2_search.sql`
 - [ ] Обновить RPC функцию `match_contacts`:
-  - Добавить параметр `filter_org_id UUID DEFAULT NULL`
-  - В WHERE условии добавить:
-    - Если `filter_org_id IS NOT NULL`: `AND contacts.org_id = filter_org_id`
-    - Если `filter_org_id IS NULL`: искать только личные (`contacts.org_id IS NULL AND contacts.user_id = match_user_id`)
-  - Сохранить обратную совместимость (старые вызовы без `filter_org_id` работают как раньше)
+  - Добавить параметр `filter_org_ids UUID[] DEFAULT NULL`
+  - В WHERE условии добавить логику Union Search:
+    - `(contacts.org_id = ANY(filter_org_ids) OR (contacts.org_id IS NULL AND contacts.user_id = match_user_id))`
+  - Это позволит искать одновременно в личных контактах и в выбранных организациях, не ломая обычный поиск.
 
 ### 2. Repository Layer
-- [ ] Обновить `app/repositories/contact_repo.py`:
-  - Метод `search()` (или новый метод `vector_search()`) принимает `org_id: str | None`
-  - При вызове RPC `match_contacts` передавать `filter_org_id` параметр
+- [ ] Обновить `app/repositories/contact_repo.py` (или вызвать через `org_repo`):
+  - Метод `search()` принимает список `org_ids: list[str] | None`
+  - При вызове RPC `match_contacts` передавать массив UUID.
 
 ### 3. Search Service Update
 - [ ] Обновить `app/services/search_service.py`:
-  - В методе `search()` при определении `org_id` из запроса передавать его в `repo.search()`
-  - Убрать пост-фильтрацию по `org_id` в Python (теперь это делается в SQL)
+  - В методе `search()` формировать список `filter_org_ids`:
+    - Если в запросе `org:skop` → список из одного UUID этой орги.
+    - Если обычный запрос → список из ВСЕХ UUID организаций пользователя.
+  - Передавать этот список в RPC.
 
 ## Acceptance Criteria
 - [ ] SQL-функция `match_contacts` (или `search_hybrid`) принимает параметр `filter_org_id` (UUID)

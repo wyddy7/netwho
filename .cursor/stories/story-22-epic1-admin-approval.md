@@ -10,7 +10,9 @@
 
 ## Technical Tasks
 
-### 1. Admin Handler
+### 1. Admin Handler & Repository
+- [ ] Создать `app/repositories/org_repo.py` (если не создан в Story 21):
+  - Вынести логику работы с `organization_members` и `organizations` из других репозиториев.
 - [ ] Обновить `app/handlers/admin.py`:
   - Команда `/admin` проверяет, является ли пользователь владельцем хотя бы одной орги
   - Если нет → "У тебя нет прав администратора"

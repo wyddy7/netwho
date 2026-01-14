@@ -23,7 +23,7 @@
   - Если уже участник → возвращать `False` (или выбрасывать исключение)
 
 ### 3. Repository Layer
-- [ ] Обновить `app/repositories/contact_repo.py`:
+- [ ] Обновить `app/repositories/org_repo.py` (создать новый, вынести из `contact_repo`):
   - Метод `add_member(user_id, org_id, status='pending')` для добавления участника
   - Проверка на дубликаты (если уже есть запись → не создавать)
 

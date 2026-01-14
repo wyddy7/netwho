@@ -12,9 +12,11 @@
 
 ### 1. Database Migration
 - [ ] Обновить `migrations/migration_epic2_search.sql` (или создать отдельную):
-  - Добавить поле `telegram_username TEXT` в таблицу `contacts`
-  - Добавить уникальный индекс: `CREATE UNIQUE INDEX idx_contacts_org_username ON contacts(org_id, telegram_username) WHERE org_id IS NOT NULL AND telegram_username IS NOT NULL`
-  - Учесть, что для личных контактов (`org_id IS NULL`) дубликаты допустимы
+  - Добавить поле `telegram_username TEXT` в таблицу `contacts`.
+  - Добавить два уникальных индекса для дедупликации:
+    1. **Для организаций:** `CREATE UNIQUE INDEX idx_contacts_org_username ON contacts(org_id, telegram_username) WHERE org_id IS NOT NULL AND telegram_username IS NOT NULL`
+    2. **Для личного:** `CREATE UNIQUE INDEX idx_contacts_personal_username ON contacts(user_id, telegram_username) WHERE org_id IS NULL AND telegram_username IS NOT NULL`
+  - Это обеспечит "один username = один человек" как внутри сообщества, так и внутри личного профиля.
 
 ### 2. AI Service Extractor Update
 - [ ] Обновить `app/services/ai_service.py`:
