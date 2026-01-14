@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from typing import Any, List
+from typing import Any, List, Dict
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
 from app.schemas import RecallSettings, UserCreate, UserInDB, UserSettings
@@ -326,5 +326,27 @@ class UserService:
             return {"status": "already_member", "org_name": org['name']}
             
         return {"status": "joined", "org_name": org['name']}
+
+    async def is_org_owner(self, user_id: int, org_id: str = None) -> bool:
+        from app.repositories.org_repo import OrgRepository
+        repo = OrgRepository(self.supabase)
+        if org_id:
+            return await repo.is_specific_org_owner(user_id, org_id)
+        return await repo.is_org_owner(user_id)
+
+    async def get_pending_members(self, owner_id: int) -> List[Dict]:
+        from app.repositories.org_repo import OrgRepository
+        repo = OrgRepository(self.supabase)
+        return await repo.get_pending_members_for_owner(owner_id)
+
+    async def approve_member(self, user_id: int, org_id: str) -> bool:
+        from app.repositories.org_repo import OrgRepository
+        repo = OrgRepository(self.supabase)
+        return await repo.update_member_status(user_id, org_id, 'approved')
+
+    async def reject_member(self, user_id: int, org_id: str) -> bool:
+        from app.repositories.org_repo import OrgRepository
+        repo = OrgRepository(self.supabase)
+        return await repo.update_member_status(user_id, org_id, 'banned')
 
 user_service = UserService()
