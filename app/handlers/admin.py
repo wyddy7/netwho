@@ -24,6 +24,7 @@ async def cmd_admin_help(message: types.Message):
         "• <code>/revoke_pro &lt;user_id&gt;</code> - Remove Pro subscription\n"
         "• <code>/check_user &lt;user_id&gt;</code> - Check user info\n"
         "• <code>/debug_user &lt;user_id&gt;</code> - Raw DB info\n"
+        "• <code>/create_org &lt;name&gt;</code> - Create Organization\n"
     )
     await message.answer(text)
 
@@ -172,4 +173,39 @@ async def cmd_debug_user(message: types.Message):
         
     except Exception as e:
         logger.error(f"Debug user error: {e}")
+        await message.reply(f"❌ Error: {e}")
+
+@router.message(Command("create_org"))
+async def cmd_create_org(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    # Parse name: /create_org "My Org"
+    # Or just /create_org My Org
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply("Usage: /create_org <name>")
+        return
+        
+    org_name = args[1].strip('"').strip("'")
+    
+    # We need Repo. 
+    # Use get_supabase() and ContactRepository(supabase)
+    from app.infrastructure.supabase.client import get_supabase
+    from app.repositories.contact_repo import ContactRepository
+    
+    repo = ContactRepository(get_supabase())
+    
+    try:
+        result = await repo.create_org(org_name, message.from_user.id)
+        # result = {'id': uuid, 'invite_code': code}
+        
+        await message.reply(
+            f"✅ <b>Organization Created!</b>\n\n"
+            f"Name: {org_name}\n"
+            f"ID: <code>{result['id']}</code>\n"
+            f"Invite Code: <code>{result['invite_code']}</code>"
+        )
+    except Exception as e:
+        logger.error(f"Create org error: {e}")
         await message.reply(f"❌ Error: {e}")

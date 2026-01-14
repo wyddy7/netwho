@@ -63,17 +63,38 @@ async def handle_agent_response(message: types.Message, response):
             request_id = generate_request_id()
             pending_actions[user_id] = {"type": "add", "data": response, "request_id": request_id}
             
-            text = (
-                f"📝 <b>Проверь перед сохранением:</b>\n"
-                f"<i>(Нажми кнопку или напиши «Да»)</i>\n\n"
-                f"👤 <b>{response.name}</b>\n"
-                f"{response.summary}\n\n"
-                "Сохранить?"
-            )
+            # --- Story 16: Scope Selection ---
+            orgs = await search_service.get_user_orgs(user_id)
+            
             builder = InlineKeyboardBuilder()
-            builder.button(text="💾 Сохранить", callback_data=f"confirm_{request_id}")
-            builder.button(text="❌ Отмена", callback_data="cancel_action")
-            builder.adjust(2)
+            
+            if orgs:
+                text = (
+                    f"📝 <b>Проверь перед сохранением:</b>\n"
+                    f"<i>(Выбери, куда сохранить)</i>\n\n"
+                    f"👤 <b>{response.name}</b>\n"
+                    f"{response.summary}"
+                )
+                # Personal
+                builder.button(text="🔒 Личное", callback_data=f"scope_{request_id}_personal")
+                # Orgs
+                for org in orgs:
+                    builder.button(text=f"📢 {org['name']}", callback_data=f"scope_{request_id}_{org['id']}")
+                
+                builder.button(text="❌ Отмена", callback_data="cancel_action")
+                builder.adjust(1)
+            else:
+                text = (
+                    f"📝 <b>Проверь перед сохранением:</b>\n"
+                    f"<i>(Нажми кнопку или напиши «Да»)</i>\n\n"
+                    f"👤 <b>{response.name}</b>\n"
+                    f"{response.summary}\n\n"
+                    "Сохранить?"
+                )
+                builder.button(text="💾 Сохранить", callback_data=f"confirm_{request_id}")
+                builder.button(text="❌ Отмена", callback_data="cancel_action")
+                builder.adjust(2)
+            
             await message.reply(text, reply_markup=builder.as_markup())
 
         # 3. ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ (Нужно подтверждение)
@@ -368,6 +389,47 @@ async def on_action_cancel(callback: types.CallbackQuery):
     await callback.answer("Отменено")
     # System Feedback Loop
     await user_service.save_chat_message(user_id, "system", "[System] User cancelled the action.")
+
+@router.callback_query(F.data.startswith("scope_"))
+async def on_scope_select(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    # Format: scope_{req_id}_{value}
+    # Value can be "personal" or UUID (which contains hyphens)
+    parts = callback.data.split("_", 2)
+    if len(parts) < 3:
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+        
+    request_id = parts[1]
+    scope_value = parts[2]
+    
+    action = pending_actions.get(user_id)
+    if not action or action.get("request_id") != request_id:
+        await callback.answer("Время истекло", show_alert=True)
+        await callback.message.delete()
+        return
+        
+    pending_actions.pop(user_id)
+    
+    draft = action["data"]
+    org_name = "Личное"
+    
+    if scope_value == "personal":
+        draft.org_id = None
+    else:
+        draft.org_id = scope_value
+        org_name = "Организацию"
+    
+    try:
+        contact_db = await search_service.create_contact(draft)
+        await callback.message.edit_text(
+            f"✅ <b>Записал в {org_name}:</b> {draft.name}\n\n📝 {draft.summary}"
+        )
+        await callback.answer("Сохранено!")
+        await user_service.save_chat_message(user_id, "system", f"[System] Contact created in {scope_value}.")
+    except Exception as e:
+        logger.error(f"Scope save error: {e}")
+        await callback.answer("Ошибка сохранения", show_alert=True)
 
 # --- ЛОГИКА УДАЛЕНИЯ ЧЕРЕЗ КНОПКУ КОРЗИНЫ В СПИСКЕ ---
 

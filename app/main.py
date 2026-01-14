@@ -74,7 +74,7 @@ async def main():
     # Then check/resurrect user
     dp.message.middleware(UserCheckMiddleware())
     # Legacy trial middleware removed (it caused issues with subscription abuse)
-
+    
     
     # Хук на старт
     dp.startup.register(on_startup)

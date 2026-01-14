@@ -64,6 +64,7 @@ class ContactCreate(BaseModel):
     raw_text: str | None = None
     meta: dict = Field(default_factory=dict)
     embedding: list[float] | None = None
+    org_id: str | None = None
 
 class ContactDraft(ContactCreate):
     """Промежуточный объект для подтверждения добавления"""
@@ -98,6 +99,7 @@ class ContactInDB(BaseModel):
     summary: str | None
     raw_text: str | None
     meta: dict
+    org_id: str | None = None
     created_at: datetime
     last_interaction: datetime | None
     reminder_at: datetime | None
@@ -110,4 +112,6 @@ class SearchResult(BaseModel):
     name: str
     summary: str | None
     meta: dict
+    org_id: UUID | None = None
+    org_name: str | None = None
     distance: float | None = None

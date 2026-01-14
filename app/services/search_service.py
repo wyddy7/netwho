@@ -2,6 +2,7 @@ from uuid import UUID
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
 from app.schemas import ContactCreate, ContactInDB, SearchResult
+from app.repositories.contact_repo import ContactRepository
 
 class AccessDenied(Exception):
     """Исключение при отсутствии прав доступа к ресурсу."""
@@ -10,12 +11,19 @@ class AccessDenied(Exception):
 class SearchService:
     def __init__(self):
         self.supabase = get_supabase()
+        self.repo = ContactRepository(self.supabase)
 
     async def create_contact(self, contact_data: ContactCreate) -> ContactInDB:
         try:
             data = contact_data.model_dump(exclude_none=True)
-            logger.debug(f"[CREATE] Creating contact: name='{contact_data.name}', user_id={contact_data.user_id}")
-            response = self.supabase.table("contacts").insert(data).execute()
+            logger.debug(f"[CREATE] Creating contact: name='{contact_data.name}', user_id={contact_data.user_id}, org_id={contact_data.org_id}")
+            
+            # Use Repository for creation (handles security check if org_id is present)
+            org_id = data.pop('org_id', None)
+            
+            # repo.create returns the response object from supabase
+            response = await self.repo.create(contact_data.user_id, data, org_id)
+            
             if not response.data:
                 raise ValueError("Failed to insert contact")
             contact = ContactInDB(**response.data[0])
@@ -24,6 +32,9 @@ class SearchService:
         except Exception as e:
             logger.error(f"[CREATE] Error creating contact: {e}", exc_info=True)
             raise
+
+    async def get_user_orgs(self, user_id: int):
+        return await self.repo.get_user_orgs(user_id)
 
     async def get_contact_by_id(self, contact_id: UUID | str, user_id: int) -> ContactInDB | None:
         """
@@ -56,6 +67,10 @@ class SearchService:
             request_user_id = str(user_id)
             
             if db_owner_id != request_user_id:
+                # TODO: Check if user is member of contact's organization?
+                # For now, stick to strict ownership for editing/deleting?
+                # Story says: "User sees personal contacts... and org contacts".
+                # But editing rules are not fully specified yet. Assuming Owner/Admin logic or strict user_id for now.
                 logger.warning(f"[AUTH] Access Denied: contact_id={contact_id_str}, DB_Owner={contact.user_id}, Request_User={user_id}")
                 return None
             
@@ -160,15 +175,11 @@ class SearchService:
     async def get_recent_contacts(self, user_id: int, limit: int = 10) -> list[SearchResult]:
         """
         Получить последние добавленные контакты (для запроса "Кто у меня есть").
-        
-        ИСПРАВЛЕНО: Используем прямой запрос к таблице вместо RPC функции,
-        которая возвращала несуществующие данные.
         """
         try:
             logger.debug(f"[get_recent_contacts] user_id={user_id}, limit={limit}")
-            # Прямой запрос к таблице вместо RPC (которая возвращала несуществующие данные)
             response = self.supabase.table("contacts")\
-                .select("id, name, summary, meta")\
+                .select("id, name, summary, meta, org_id")\
                 .eq("user_id", user_id)\
                 .eq("is_archived", False)\
                 .order("created_at", desc=True)\
@@ -190,25 +201,15 @@ class SearchService:
     async def search(self, query: str, user_id: int, limit: int = 10) -> list[SearchResult]:
         try:
             # ХАК: Если запрос похож на "покажи всех", вызываем get_recent_contacts
-            # Но лучше это делать через логику агента (он может передать query='*')
             if query.strip() == "*" or query.lower() in ["все", "all", "все контакты"]:
                 logger.info(f"Fetching recent contacts for user {user_id}")
                 return await self.get_recent_contacts(user_id, limit)
 
             logger.debug(f"Searching for '{query}' for user {user_id}...")
             
-            from app.services.ai_service import ai_service
-            
-            embedding = await ai_service.get_embedding(query)
-            
-            params = {
-                "query_embedding": embedding,
-                "match_user_id": user_id,
-                "match_threshold": 0.15, 
-                "match_count": limit
-            }
-            
-            response = self.supabase.rpc("match_contacts", params).execute()
+            # Using Repo Hybrid Search (Story 15)
+            # Calls the search_hybrid RPC
+            response = await self.repo.search(user_id, query)
             
             if not response.data:
                 logger.debug("No matches found")
