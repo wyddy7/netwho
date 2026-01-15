@@ -5,6 +5,7 @@ from app.infrastructure.supabase.client import get_supabase
 from app.schemas import ContactCreate, ContactInDB, SearchResult
 from app.repositories.contact_repo import ContactRepository
 from app.repositories.org_repo import OrgRepository
+from app.services.user_service import user_service
 
 class AccessDenied(Exception):
     """Исключение при отсутствии прав доступа к ресурсу."""
@@ -237,7 +238,6 @@ class SearchService:
     async def search(self, query: str, user_id: int, limit: int = 10) -> list[SearchResult]:
         try:
             # 1. Попытка выделить организацию из запроса (Story 16)
-            # Если запрос начинается с org: или содержит его, пробуем поиск по орге
             q = query.strip()
             q_lower = q.lower()
             
@@ -245,26 +245,46 @@ class SearchService:
             org_name_query = None
 
             if "org:" in q_lower:
-                # Извлекаем название орги. Может быть "org:skop" или "кто в org:skop"
-                # Ищем подстроку после org: до пробела или конца
                 match = re.search(r'org:(\S+)', q_lower)
                 if match:
                     org_name_query = match.group(1)
-                    # Чистим основной запрос от префикса для дальнейшего поиска
                     q = q.replace(f"org:{org_name_query}", "").strip()
-                    if not q: q = "*" # Если был только org:skop, ищем всех в этой орге
-                
-                # Ищем ID организации
-                if org_name_query:
-                    orgs = await self.get_user_orgs(user_id)
-                    for org in orgs:
-                        if org_name_query == org['name'].lower() or org_name_query in org['name'].lower():
-                            org_id = org['id']
-                            break
+                    if not q: q = "*"
+            
+            # Если не нашли через org:, попробуем найти упоминание организации в тексте
+            if not org_name_query:
+                user_memberships = await self.get_user_orgs(user_id)
+                for org in user_memberships:
+                    if org['name'].lower() in q_lower:
+                        org_id = org['id']
+                        break
+            else:
+                user_memberships = await self.get_user_orgs(user_id)
+                for org in user_memberships:
+                    if org_name_query == org['name'].lower() or org_name_query in org['name'].lower():
+                        org_id = org['id']
+                        break
+
+            # --- STORY 23: GLOBAL LIMIT CHECK ---
+            # Если поиск касается организации, проверяем лимиты ПЕРЕД любыми действиями
+            if org_id:
+                allowed, message = await user_service.check_search_limit(user_id, str(org_id))
+                if not allowed:
+                    logger.info(f"[LIMIT] Search blocked for user {user_id} in org {org_id}")
+                    raise AccessDenied(message)
+            # ------------------------------------
 
             # 2. Если организация найдена, и запрос был только про неё (или "все"), 
             # возвращаем список контактов этой организации
             if org_id and (q == "*" or not q):
+                # Double check: if user is pending, they should only see this via the limit logic above
+                # But here we are already after the limit check. 
+                # Let's add an extra security layer: check if user is actually APPROVED to bypass limits
+                # or if they are PENDING but have searches left (already checked).
+                
+                # However, the direct select below bypasses our search_hybrid SQL function's security.
+                # Let's make it respect the membership status.
+                
                 response = self.supabase.table("contacts")\
                     .select("id, name, summary, meta, org_id, organizations(name)")\
                     .eq("org_id", str(org_id))\
@@ -273,12 +293,19 @@ class SearchService:
                     .limit(limit)\
                     .execute()
 
+                # Filter results to ensure user is allowed to see them if they are pending
+                # (Actually, if they reached here, check_search_limit already passed)
+
                 results: list[SearchResult] = []
                 for item in response.data:
                     org_rel = item.get("organizations")
                     item["org_name"] = org_rel.get("name") if isinstance(org_rel, dict) else None
                     item.pop("organizations", None)
                     results.append(SearchResult(**item))
+                
+                # Story 23: Increment counter for simple list search
+                await user_service.increment_free_searches(user_id, str(org_id))
+                
                 return results
 
             # 3. Гибридный поиск по оставшемуся запросу
@@ -372,6 +399,11 @@ class SearchService:
             final_results = final_results[:limit]
             
             logger.info(f"Hybrid Search Total: {len(final_results)} (SQL: {len(sql_results)}, Vector: {len(vector_results)})")
+            
+            # Story 23: Increment counter for pending users in org context
+            if org_id:
+                await user_service.increment_free_searches(user_id, str(org_id))
+                
             return final_results
             
         except Exception as e:

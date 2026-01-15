@@ -685,7 +685,12 @@ class AIService:
                 return "⚠ Бот устал и прилег отдохнуть (Max Steps Error)."
 
         except Exception as e:
-            logger.error(f"Router Agent failed: {e}")
+            from app.services.search_service import AccessDenied
+            if isinstance(e, AccessDenied):
+                logger.warning(f"Access Denied during agent execution: {e}")
+                return str(e)
+            
+            logger.error(f"Router Agent failed: {e}", exc_info=True)
             return "Произошла ошибка (Agent Error)."
 
 ai_service = AIService()

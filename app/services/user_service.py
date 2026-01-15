@@ -349,4 +349,44 @@ class UserService:
         repo = OrgRepository(self.supabase)
         return await repo.update_member_status(user_id, org_id, 'banned')
 
+    async def increment_free_searches(self, user_id: int, org_id: str) -> int:
+        """
+        Story 23: Increment free searches counter for pending members.
+        """
+        from app.repositories.contact_repo import ContactRepository
+        repo = ContactRepository(self.supabase)
+        return await repo.increment_free_searches(user_id, org_id)
+
+    async def check_search_limit(self, user_id: int, org_id: str) -> tuple[bool, str]:
+        """
+        Story 23: Check if pending user reached free limit in organization.
+        """
+        try:
+            res = self.supabase.table('organization_members')\
+                .select('status, free_searches_used')\
+                .eq('user_id', user_id)\
+                .eq('org_id', org_id)\
+                .execute()
+            
+            if not res.data:
+                return True, ""
+                
+            member = res.data[0]
+            status = member.get('status', 'pending')
+            used = member.get('free_searches_used', 0)
+            
+            logger.debug(f"[LIMIT] Checking user {user_id} in org {org_id}: status={status}, used={used}/3")
+            
+            if status == 'pending' and used >= 3:
+                msg = (
+                    "Лимит демо-поисков исчерпан (3/3).\n"
+                    "Чтобы продолжить, администратор должен подтвердить твою заявку."
+                )
+                return False, msg
+                
+            return True, ""
+        except Exception as e:
+            logger.error(f"Error checking search limit: {e}")
+            return True, ""
+
 user_service = UserService()

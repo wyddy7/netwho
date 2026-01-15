@@ -23,12 +23,16 @@ class OrgRepository:
         Returns list of orgs user belongs to.
         Optimization: Join with organizations table to get names
         """
-        # Return format: [{'id': uuid, 'name': 'Python Heroes'}, ...]
+        # Return format: [{'id': uuid, 'name': 'Python Heroes', 'status': 'approved'}, ...]
         try:
-            res = self.db.table('organization_members').select('org_id, organizations(name)').eq('user_id', user_id).execute()
+            res = self.db.table('organization_members').select('org_id, status, organizations(name)').eq('user_id', user_id).execute()
             
             return [
-                {'id': row['org_id'], 'name': row['organizations']['name']} 
+                {
+                    'id': row['org_id'], 
+                    'name': row['organizations']['name'],
+                    'status': row.get('status', 'pending')
+                } 
                 for row in res.data if row.get('organizations')
             ]
         except Exception as e:
