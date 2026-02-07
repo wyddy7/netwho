@@ -421,6 +421,10 @@ async def on_scope_select(callback: types.CallbackQuery):
         await callback.message.delete()
         return
         
+    draft = action["data"]
+    org_name = "Личное"
+    org_id = None
+    
     if scope_value == "personal":
         draft.org_id = None
     else:
