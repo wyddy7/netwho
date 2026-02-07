@@ -690,7 +690,20 @@ class AIService:
                 logger.warning(f"Access Denied during agent execution: {e}")
                 return str(e)
             
-            logger.error(f"Router Agent failed: {e}", exc_info=True)
+            error_type = type(e).__name__
+            error_msg = str(e)
+            
+            # Безопасное логирование без утечки ключей
+            logger.error(
+                f"Router Agent failed | "
+                f"Type: {error_type} | "
+                f"Message: {error_msg} | "
+                f"User: {user_id} | "
+                f"Model: {settings.LLM_MODEL} | "
+                f"Has Proxy: {bool(settings.PROXY_URL)} | "
+                f"Has API Key: {bool(settings.OPENROUTER_API_KEY)}",
+                exc_info=True
+            )
             return "Произошла ошибка (Agent Error)."
 
 ai_service = AIService()

@@ -12,32 +12,25 @@ class ContactRepository:
         if org_id:
             # 1. Проверяем, реально ли юзер состоит в этой организации
             # Таблица называется organization_members, поля user_id и org_id
-            try:
-                response = self.db.table('organization_members')\
-                    .select('user_id, status')\
-                    .eq('user_id', user_id)\
-                    .eq('org_id', org_id)\
-                    .execute()
-                
-                is_member = len(response.data) > 0
-                status = response.data[0].get('status', 'pending') if is_member else None
-                
-                if not is_member or status == 'pending':
-                    if not is_member:
-                        # Юзер пытается хакнуть или баг в UI — сбрасываем на личный
-                        logger.warning(f"SECURITY ALERT: User {user_id} tried to write to forbidden org {org_id}. Fallback to personal.")
-                        org_id = None
-                    else:
-                        # Юзер состоит, но еще не подтвержден
-                        logger.info(f"Access Blocked: User {user_id} is 'pending' in org {org_id}.")
-                        raise ValueError("Дождитесь подтверждения участия")
-            except ValueError:
-                # Re-raise our specific error for the service layer
-                raise
-            except Exception as e:
-                logger.error(f"Error checking org membership: {e}")
-                org_id = None # Fail safe
-                
+            response = self.db.table('organization_members')\
+                .select('user_id, status')\
+                .eq('user_id', user_id)\
+                .eq('org_id', org_id)\
+                .execute()
+            
+            is_member = len(response.data) > 0
+            status = response.data[0].get('status', 'pending') if is_member else None
+            
+            if not is_member:
+                # Юзер пытается хакнуть или баг в UI — сбрасываем на личный
+                logger.warning(f"SECURITY ALERT: User {user_id} tried to write to forbidden org {org_id}. Fallback to personal.")
+                org_id = None
+            elif status == 'pending':
+                # Юзер состоит, но еще не подтвержден
+                logger.info(f"Access Blocked: User {user_id} is 'pending' in org {org_id}.")
+                # Выбрасываем конкретную ошибку, которую сервис слой поймет
+                from app.services.search_service import AccessDenied
+                raise AccessDenied("Дождитесь подтверждения участия")
         # --- SECURITY CHECK END ---
                 
         # Форсируем данные (не доверяем входному словарю целиком)

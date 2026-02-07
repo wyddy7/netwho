@@ -19,25 +19,13 @@ class SearchService:
 
     async def create_contact(self, contact_data: ContactCreate) -> ContactInDB:
         try:
-            # 1. Security Check: Block 'pending' members from creating org contacts
-            if contact_data.org_id:
-                res = self.supabase.table('organization_members')\
-                    .select('status')\
-                    .eq('user_id', contact_data.user_id)\
-                    .eq('org_id', str(contact_data.org_id))\
-                    .execute()
-                
-                if res.data and res.data[0].get('status') == 'pending':
-                    logger.warning(f"[AUTH] Create blocked: user {contact_data.user_id} is pending in org {contact_data.org_id}")
-                    raise AccessDenied("Дождитесь подтверждения участия")
-
             data = contact_data.model_dump(exclude_none=True)
             logger.debug(f"[CREATE] Creating contact: name='{contact_data.name}', user_id={contact_data.user_id}, org_id={contact_data.org_id}")
             
             # Use Repository for creation (handles security check if org_id is present)
             org_id = data.pop('org_id', None)
             
-            # repo.create returns the response object from supabase
+            # repo.create handles security checks and raises AccessDenied if pending
             response = await self.repo.create(contact_data.user_id, data, org_id)
             
             if not response.data:
@@ -245,10 +233,10 @@ class SearchService:
             org_name_query = None
 
             if "org:" in q_lower:
-                match = re.search(r'org:(\S+)', q_lower)
+                match = re.search(r'org:(\S+)', q, re.IGNORECASE)
                 if match:
-                    org_name_query = match.group(1)
-                    q = q.replace(f"org:{org_name_query}", "").strip()
+                    org_name_query = match.group(1).lower()
+                    q = re.sub(r'org:\S+', '', q, flags=re.IGNORECASE).strip()
                     if not q: q = "*"
             
             # Если не нашли через org:, попробуем найти упоминание организации в тексте

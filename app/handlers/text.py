@@ -421,12 +421,6 @@ async def on_scope_select(callback: types.CallbackQuery):
         await callback.message.delete()
         return
         
-    pending_actions.pop(user_id)
-    
-    draft = action["data"]
-    org_name = "Личное"
-    org_id = None
-    
     if scope_value == "personal":
         draft.org_id = None
     else:
@@ -442,6 +436,7 @@ async def on_scope_select(callback: types.CallbackQuery):
     
     try:
         contact_db = await search_service.create_contact(draft)
+        pending_actions.pop(user_id) # Удаляем ТОЛЬКО после успеха
         await callback.message.edit_text(
             f"✅ <b>Записал в {'📢 ' + org_name if org_id else '🔒 Личное'}:</b> {draft.name}\n\n📝 {draft.summary}"
         )
