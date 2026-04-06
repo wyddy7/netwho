@@ -1,7 +1,9 @@
 import asyncio
+import os
 import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
@@ -43,9 +45,12 @@ async def on_startup(bot: Bot):
 async def main():
     logger.info("Starting NetWho Bot...")
     
+    _proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("PROXY_URL")
+    _session = AiohttpSession(proxy=_proxy) if _proxy else None
     bot = Bot(
         token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=_session,
     )
     
     dp = Dispatcher()
