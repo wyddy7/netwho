@@ -14,7 +14,7 @@ NetWho — это не просто записная книжка, это **ак
   - CRUD Operations (Add, Delete, Update)
   - User Settings & Confirmation Flow
 
----
+--- 
 
 ## 🚧 Current Phase: Epic 6 (MVP Polish)
 *Цель: Подготовить бота к реальному использованию и деплою.*
@@ -56,4 +56,3 @@ NetWho — это не просто записная книжка, это **ак
 - **Migrations:** Alembic setup (currently using raw SQL).
 - **Tests:** Unit tests for services.
 - **Observability:** Sentry integration.
-
