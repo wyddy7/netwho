@@ -13,7 +13,7 @@ NetWho — это не просто записная книжка, это **ак
   - LLM Integration (OpenAI/Groq)
   - CRUD Operations (Add, Delete, Update)
   - User Settings & Confirmation Flow
-
+ 
 --- 
  
 ## 🚧 Current Phase: Epic 6 (MVP Polish)
