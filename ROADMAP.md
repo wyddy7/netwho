@@ -15,7 +15,7 @@ NetWho — это не просто записная книжка, это **ак
   - User Settings & Confirmation Flow
 
 --- 
-
+ 
 ## 🚧 Current Phase: Epic 6 (MVP Polish)
 *Цель: Подготовить бота к реальному использованию и деплою.*
 
