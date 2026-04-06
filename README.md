@@ -20,7 +20,7 @@
     ```bash
     cp .env.example .env
     ```
-
+ 
 2.  **Запустите контейнер**:
     ```bash
     docker compose up -d --build
