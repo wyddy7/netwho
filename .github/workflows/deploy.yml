@@ -47,6 +47,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # Immutable content digest of the pushed image. Deploy pins to this
+      # (not the mutable :latest tag) so a retagged image cannot be pulled.
+      digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - name: Checkout repository
@@ -69,6 +73,7 @@ jobs:
             type=sha
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -98,7 +103,9 @@ jobs:
           command_timeout: 30m
           script: |
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            IMAGE_URL="ghcr.io/$REPO_LOWER:latest"
+            # Pin to the immutable content digest built by this run, not the
+            # mutable :latest tag. A retagged/poisoned :latest cannot be pulled.
+            IMAGE_URL="ghcr.io/$REPO_LOWER@${{ needs.build-and-push.outputs.digest }}"
 
             echo "Deploying $IMAGE_URL..."
 
