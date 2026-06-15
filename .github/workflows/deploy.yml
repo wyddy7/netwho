@@ -3,6 +3,11 @@ name: Deploy to Homelab
 on:
   push:
     branches: [ "master", "org" ]
+  # Run the lint gate on PRs too, so code is validated BEFORE it merges
+  # (branch protection requires a PR but had no status check to enforce).
+  # Build/deploy stay push-only — see the `if:` guards on those jobs.
+  pull_request:
+    branches: [ "master", "org" ]
 
 env:
   REGISTRY: ghcr.io
@@ -43,6 +48,9 @@ jobs:
   # ------------------------------------------------------------------
   build-and-push:
     needs: lint
+    # Never build/push from a pull_request event — only on push to a deploy
+    # branch. On PRs this job (and deploy below) is skipped; lint still runs.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -86,6 +94,7 @@ jobs:
   # ------------------------------------------------------------------
   deploy:
     needs: build-and-push
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Connect to Tailscale
