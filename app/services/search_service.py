@@ -34,7 +34,7 @@ class SearchService:
             logger.info(f"[CREATE] Contact created: id={contact.id}, name='{contact.name}', user_id={contact.user_id}")
             return contact
         except Exception as e:
-            logger.error(f"[CREATE] Error creating contact: {e}", exc_info=True)
+            logger.exception("[CREATE] contact insert failed")
             raise
 
     async def get_user_orgs(self, user_id: int):
@@ -96,7 +96,7 @@ class SearchService:
             logger.debug(f"[AUTH] Access granted: contact_id={contact_id_str}, user_id={user_id}")
             return contact
         except Exception as e:
-            logger.error(f"[AUTH] Exception in get_contact_by_id: {type(e).__name__}: {e}", exc_info=True)
+            logger.exception("[AUTH] get_contact_by_id failed")
             raise
 
     async def update_contact(self, contact_id: UUID | str, user_id: int, updates: dict) -> ContactInDB | None:
@@ -157,7 +157,7 @@ class SearchService:
             
             return deleted
         except Exception as e:
-            logger.error(f"[DELETE] Exception during DB delete: {type(e).__name__}: {e}", exc_info=True)
+            logger.exception("[DELETE] DB delete failed")
             raise
     
     async def count_contacts(self, user_id: int) -> int:
@@ -220,7 +220,7 @@ class SearchService:
 
             return results
         except Exception as e:
-            logger.error(f"[get_recent_contacts] Exception: {e}", exc_info=True)
+            logger.exception("[get_recent_contacts] failed")
             return []
 
     async def search(self, query: str, user_id: int, limit: int = 10) -> list[SearchResult]:

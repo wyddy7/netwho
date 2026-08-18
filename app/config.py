@@ -4,6 +4,13 @@ from loguru import logger
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
 
+from app.logging_guard import install as _install_logging_guard
+
+# Logging must be incapable of raising (loguru + exc_info incident 2026-08-18).
+# Fails loudly at startup if the guard cannot be proven working — that is the
+# intended failure mode, never a silent skip.
+_install_logging_guard()
+
 # Настройка логгера (будет обновлена после загрузки settings)
 logger.remove()
 

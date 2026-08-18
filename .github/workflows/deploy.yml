@@ -36,6 +36,20 @@ jobs:
           # Если есть зависимости, нужные для линтинга, можно их поставить,
           # но для flake8 обычно достаточно самого кода.
 
+      - name: Logging gate (loguru misuse is a build error)
+        # AST-based ban on logging calls that can raise (exc_info= under
+        # loguru, f-string + format args). Stdlib-only, no deps.
+        run: python scripts/check_logging.py
+
+      - name: Test the logging guard (pinned to loguru internals)
+        # app/logging_guard.py patches loguru==0.7.3 private API and
+        # self-verifies at startup; run its tests here so a loguru version
+        # bump fails the build, not the production container.
+        run: |
+          pip install uv
+          uv sync --frozen
+          uv run pytest tests/ -q
+
       - name: Lint with flake8
         run: |
           # stop the build if there are Python syntax errors or undefined names

@@ -587,7 +587,7 @@ class AIService:
                                 logger.warning(f"[ai_service] delete_contact: AccessDenied - {e}")
                                 tool_result_content = "ERROR: Access Denied. Contact does not belong to you."
                             else:
-                                logger.error(f"[ai_service] delete_contact: Exception - {type(e).__name__}: {e}", exc_info=True)
+                                logger.exception("[ai_service] delete_contact failed")
                                 tool_result_content = f"ERROR: Failed to delete contact. {str(e)}"
 
                 elif fn_name == "update_contact":
@@ -690,19 +690,17 @@ class AIService:
                 logger.warning(f"Access Denied during agent execution: {e}")
                 return str(e)
             
-            error_type = type(e).__name__
-            error_msg = str(e)
-            
-            # Безопасное логирование без утечки ключей
-            logger.error(
-                f"Router Agent failed | "
-                f"Type: {error_type} | "
-                f"Message: {error_msg} | "
-                f"User: {user_id} | "
-                f"Model: {settings.LLM_MODEL} | "
-                f"Has Proxy: {bool(settings.PROXY_URL)} | "
-                f"Has API Key: {bool(settings.OPENROUTER_API_KEY)}",
-                exc_info=True
+            # Безопасное логирование без утечки ключей. Статичный шаблон,
+            # значения только как kwargs — подставленные значения loguru не
+            # переформатирует, поэтому фигурные скобки в них безопасны.
+            # Тип и текст исключения несёт трейсбек logger.exception.
+            logger.exception(
+                "Router Agent failed | User: {user} | Model: {model} | "
+                "Has Proxy: {has_proxy} | Has API Key: {has_api_key}",
+                user=user_id,
+                model=settings.LLM_MODEL,
+                has_proxy=bool(settings.PROXY_URL),
+                has_api_key=bool(settings.OPENROUTER_API_KEY),
             )
             return "Произошла ошибка (Agent Error)."
 

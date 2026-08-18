@@ -164,7 +164,7 @@ async def handle_agent_response(message: types.Message, response):
                         await message.reply("❌ Ошибка: контакт не найден")
                 except Exception as e:
                     from app.services.search_service import AccessDenied
-                    logger.error(f"[handle_agent_response.ActionConfirmed.del] EXCEPTION: {type(e).__name__}: {e}", exc_info=True)
+                    logger.exception("[handle_agent_response.ActionConfirmed.del] contact deletion failed")
                     if isinstance(e, AccessDenied):
                         logger.error(f"[handle_agent_response.ActionConfirmed.del] AccessDenied caught: {e}")
                         await message.reply("❌ Контакт не найден или не принадлежит вам")
@@ -356,7 +356,7 @@ async def on_action_confirm(callback: types.CallbackQuery):
                     await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Not found.")
             except Exception as e:
                 from app.services.search_service import AccessDenied
-                logger.error(f"[on_action_confirm.del] EXCEPTION: {type(e).__name__}: {e}", exc_info=True)
+                logger.exception("[on_action_confirm.del] contact deletion failed")
                 if isinstance(e, AccessDenied):
                     logger.error(f"[on_action_confirm.del] AccessDenied caught: {e}")
                     await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
@@ -530,7 +530,7 @@ async def perform_delete(callback: types.CallbackQuery, contact_id: UUID, user_i
             logger.warning(f"[perform_delete] AccessDenied: contact_id={contact_id}, user_id={user_id}, error={e}")
             await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
         else:
-            logger.error(f"[perform_delete] Exception: {type(e).__name__}: {e}", exc_info=True)
+            logger.exception("[perform_delete] contact deletion failed")
             await callback.answer("Ошибка при удалении", show_alert=True)
 
 # --- ВРЕМЕННЫЙ ТЕСТОВЫЙ ХЕНДЛЕР ДЛЯ ПЕНТЕСТА ---
