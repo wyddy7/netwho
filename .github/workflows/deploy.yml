@@ -136,6 +136,16 @@ jobs:
 
             docker pull $IMAGE_URL
 
+            # Rollback target: the image the CURRENTLY RUNNING container uses.
+            # Captured before stop/rm, and image prune is deferred until the new
+            # one is verified — otherwise the prune deletes what we roll back to.
+            PREV_IMAGE=$(docker inspect netwho --format '{{.Image}}' 2>/dev/null || true)
+            echo "Rollback target: ${PREV_IMAGE:-<none, first deploy>}"
+
+            # Keep the outgoing container's logs. Recreating discards them, and
+            # with them the answer to "since when has this been broken".
+            docker logs netwho > /tmp/netwho-predeploy-$(date +%F-%H%M%S).log 2>&1 || true
+
             docker stop netwho || true
             docker rm netwho || true
 
@@ -145,5 +155,59 @@ jobs:
               --env-file /opt/apps/netwho_bot/.env \
               $IMAGE_URL
 
+            # --- Post-deploy verification -------------------------------------
+            # "docker ps says Up" is NOT a bot status: a crash-looping or deaf
+            # container reports Up too. The only trustworthy signal is the
+            # startup marker in the logs, plus the absence of tracebacks.
+            MARKER="Bot started! Polling..."
+            VERIFIED=0
+            for i in $(seq 1 40); do
+              if docker logs netwho 2>&1 | grep -qF "$MARKER"; then VERIFIED=1; break; fi
+              if [ -z "$(docker ps -q -f name=^netwho$)" ]; then
+                echo "Container is not running $i s after start (crash loop?)"
+                break
+              fi
+              sleep 3
+            done
+
+            if [ "$VERIFIED" = "1" ]; then
+              # The marker can appear and the bot still die seconds later.
+              sleep 15
+              if docker logs netwho 2>&1 | grep -q "Traceback (most recent call last)"; then
+                echo "Startup marker found, but a traceback followed it."
+                VERIFIED=0
+              elif [ -z "$(docker ps -q -f name=^netwho$)" ]; then
+                echo "Startup marker found, but the container exited afterwards."
+                VERIFIED=0
+              fi
+            fi
+
+            if [ "$VERIFIED" != "1" ]; then
+              echo "=== DEPLOY VERIFICATION FAILED — rolling back ==="
+              docker logs netwho > /tmp/netwho-FAILED-$(date +%F-%H%M%S).log 2>&1 || true
+              docker logs netwho --tail 60 2>&1 || true
+              docker stop netwho || true
+              docker rm netwho || true
+              if [ -n "$PREV_IMAGE" ]; then
+                echo "Restoring $PREV_IMAGE"
+                docker run -d \
+                  --name netwho \
+                  --restart unless-stopped \
+                  --env-file /opt/apps/netwho_bot/.env \
+                  $PREV_IMAGE
+                for i in $(seq 1 40); do
+                  if docker logs netwho 2>&1 | grep -qF "$MARKER"; then
+                    echo "Rollback verified: previous image is live."
+                    break
+                  fi
+                  sleep 3
+                done
+              else
+                echo "No previous image recorded — cannot roll back automatically."
+              fi
+              exit 1
+            fi
+
+            echo "Deploy verified: startup marker present, no tracebacks."
             docker image prune -f
 
