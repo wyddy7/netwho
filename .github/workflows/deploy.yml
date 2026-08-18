@@ -189,8 +189,14 @@ jobs:
             if [ "$VERIFIED" = "1" ]; then
               # The marker can appear and the bot still die seconds later.
               sleep 15
-              if docker logs netwho 2>&1 | grep -q "Traceback (most recent call last)"; then
-                echo "Startup marker found, but a traceback followed it."
+              # Scan for tracebacks only in the STARTUP section (up to the
+              # marker). After the marker the bot is serving, and a retryable
+              # application error — the recall job runs every minute and talks
+              # to Supabase — is not a failed deploy. Rolling back a healthy
+              # image on one transient network blip is the worse failure.
+              if docker logs netwho 2>&1 | sed '/Bot started/q' \
+                   | grep -q "Traceback (most recent call last)"; then
+                echo "A traceback occurred during startup, before the bot began polling."
                 VERIFIED=0
               elif [ -z "$(docker ps -q -f name=^netwho$)" ]; then
                 echo "Startup marker found, but the container exited afterwards."
