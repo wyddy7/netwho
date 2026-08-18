@@ -166,10 +166,10 @@ async def handle_agent_response(message: types.Message, response):
                     from app.services.search_service import AccessDenied
                     logger.exception("[handle_agent_response.ActionConfirmed.del] contact deletion failed")
                     if isinstance(e, AccessDenied):
-                        logger.error(f"[handle_agent_response.ActionConfirmed.del] AccessDenied caught: {e}")
+                        logger.error("[handle_agent_response.ActionConfirmed.del] AccessDenied caught: {err}", err=str(e))
                         await message.reply("❌ Контакт не найден или не принадлежит вам")
                     else:
-                        logger.error(f"[handle_agent_response.ActionConfirmed.del] Other exception: {e}")
+                        logger.error("[handle_agent_response.ActionConfirmed.del] Other exception: {err}", err=repr(e))
                         await message.reply("❌ Ошибка при удалении")
 
             elif action["type"] == "update":
@@ -202,11 +202,11 @@ async def handle_agent_response(message: types.Message, response):
             try:
                 await message.reply(response)
             except Exception as e:
-                logger.warning(f"Failed to send text with parse_mode (HTML?): {e}. Sending plain text.")
+                logger.warning("Failed to send text with parse_mode (HTML?): {err}. Sending plain text.", err=repr(e))
                 await message.reply(response, parse_mode=None)
 
-    except Exception as e:
-        logger.error(f"Agent response handler error: {e}")
+    except Exception:
+        logger.exception("Agent response handler error")
         await message.reply("Ошибка при отображении ответа.")
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -291,8 +291,8 @@ async def handle_text(message: types.Message):
         try:
             response = await ai_service.run_router_agent(user_text, user_id)
             await handle_agent_response(message, response)
-        except Exception as e:
-            logger.error(f"Text handler error: {e}")
+        except Exception:
+            logger.exception("Text handler error")
             await message.reply("Что-то пошло не так.")
 
 # --- CALLBACK HANDLERS ---
@@ -358,11 +358,11 @@ async def on_action_confirm(callback: types.CallbackQuery):
                 from app.services.search_service import AccessDenied
                 logger.exception("[on_action_confirm.del] contact deletion failed")
                 if isinstance(e, AccessDenied):
-                    logger.error(f"[on_action_confirm.del] AccessDenied caught: {e}")
+                    logger.error("[on_action_confirm.del] AccessDenied caught: {err}", err=str(e))
                     await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
                     await user_service.save_chat_message(user_id, "system", f"[System] Failed to delete contact {contact_id}: Access denied.")
                 else:
-                    logger.error(f"[on_action_confirm.del] Other exception: {e}")
+                    logger.error("[on_action_confirm.del] Other exception: {err}", err=repr(e))
                     await callback.answer("Ошибка выполнения", show_alert=True)
                     await user_service.save_chat_message(user_id, "system", f"[System] Action failed with error: {e}")
         
@@ -380,16 +380,16 @@ async def on_action_confirm(callback: types.CallbackQuery):
             except Exception as e:
                 from app.services.search_service import AccessDenied
                 if isinstance(e, AccessDenied):
-                    logger.error(f"AccessDenied in on_action_confirm (update): {e}")
+                    logger.error("AccessDenied in on_action_confirm (update): {err}", err=str(e))
                     await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
                     await user_service.save_chat_message(user_id, "system", f"[System] Failed to update contact {update_ask.contact_id}: Access denied.")
                 else:
-                    logger.error(f"Update error in on_action_confirm: {e}")
+                    logger.exception("Update error in on_action_confirm")
                     await callback.answer("Ошибка при обновлении", show_alert=True)
                     await user_service.save_chat_message(user_id, "system", f"[System] Failed to update contact {update_ask.contact_id}: {e}")
 
     except Exception as e:
-        logger.error(f"Action confirm error: {e}")
+        logger.exception("Action confirm error")
         await callback.answer("Ошибка выполнения", show_alert=True)
         await user_service.save_chat_message(user_id, "system", f"[System] Action failed with error: {e}")
 
@@ -457,7 +457,7 @@ async def on_scope_select(callback: types.CallbackQuery):
             # Re-show the scope selection? Or just let it be. 
             # The pending_actions is already popped.
         else:
-            logger.error(f"Scope save error: {e}")
+            logger.exception("Scope save error")
             await callback.answer("Ошибка сохранения", show_alert=True)
 
 # --- ЛОГИКА УДАЛЕНИЯ ЧЕРЕЗ КНОПКУ КОРЗИНЫ В СПИСКЕ ---
@@ -527,7 +527,10 @@ async def perform_delete(callback: types.CallbackQuery, contact_id: UUID, user_i
     except Exception as e:
         from app.services.search_service import AccessDenied
         if isinstance(e, AccessDenied):
-            logger.warning(f"[perform_delete] AccessDenied: contact_id={contact_id}, user_id={user_id}, error={e}")
+            logger.warning(
+                "[perform_delete] AccessDenied: contact_id={cid}, user_id={uid}, error={err}",
+                cid=contact_id, uid=user_id, err=str(e),
+            )
             await callback.answer("❌ Контакт не найден или не принадлежит вам", show_alert=True)
         else:
             logger.exception("[perform_delete] contact deletion failed")

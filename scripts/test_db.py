@@ -25,8 +25,8 @@ async def test_db_pipeline():
         )
         user = await user_service.upsert_user(user_data)
         logger.success(f"User created: {user.id}")
-    except Exception as e:
-        logger.error(f"User creation failed: {e}")
+    except Exception:
+        logger.exception("User creation failed")
         return
 
     # 2. Создаем контакт
@@ -49,8 +49,8 @@ async def test_db_pipeline():
         contact = await search_service.create_contact(contact_data)
         contact_id = contact.id
         logger.success(f"Contact created: {contact.id}")
-    except Exception as e:
-        logger.error(f"Contact creation failed: {e}")
+    except Exception:
+        logger.exception("Contact creation failed")
 
     # 3. Ищем контакт (поиск не сработает адекватно на фейковом векторе, 
     # но проверим что RPC вызывается без ошибок)
@@ -59,8 +59,8 @@ async def test_db_pipeline():
         # Тут вызовется реальный AI для генерации вектора запроса
         results = await search_service.search("Test", TEST_USER_ID)
         logger.info(f"Search executed. Found: {len(results)}")
-    except Exception as e:
-        logger.error(f"Search failed: {e}")
+    except Exception:
+        logger.exception("Search failed")
 
     # 4. Удаляем контакт
     if contact_id:
@@ -71,16 +71,16 @@ async def test_db_pipeline():
                 logger.success("Contact deleted")
             else:
                 logger.warning("Contact not found for deletion")
-        except Exception as e:
-            logger.error(f"Deletion failed: {e}")
+        except Exception:
+            logger.exception("Deletion failed")
 
     # 5. Удаляем пользователя (чистим за собой)
     try:
         logger.info("Deleting user...")
         deleted = await user_service.delete_user_full(TEST_USER_ID)
         logger.success("User deleted")
-    except Exception as e:
-        logger.error(f"User deletion failed: {e}")
+    except Exception:
+        logger.exception("User deletion failed")
 
 if __name__ == "__main__":
     asyncio.run(test_db_pipeline())

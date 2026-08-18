@@ -15,8 +15,8 @@ class PromptsConfig:
                 logger.info("Prompts loaded from prompts.yaml")
             else:
                 logger.warning("prompts.yaml not found!")
-        except Exception as e:
-            logger.error(f"Failed to load prompts: {e}")
+        except Exception:
+            logger.exception("Failed to load prompts")
 
     @classmethod
     def get(cls, key: str) -> str:

@@ -76,6 +76,6 @@ class ContactRepository:
                 .execute()
             
             return new_count
-        except Exception as e:
-            logger.error(f"Error incrementing counter: {e}")
+        except Exception:
+            logger.exception("Error incrementing counter")
             return 0

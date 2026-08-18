@@ -152,8 +152,8 @@ class AIService:
             )
             logger.info(f"LLM Embedding Response | Vector Size: {len(response.data[0].embedding)}")
             return response.data[0].embedding
-        except Exception as e:
-            logger.error(f"Embedding failed: {e}")
+        except Exception:
+            logger.exception("Embedding failed")
             raise
 
     async def transcribe_audio(self, file_path: str) -> str:
@@ -186,9 +186,8 @@ class AIService:
                 )
             logger.info(f"STT Response | Text: '{transcription.text}'")
             return transcription.text
-        except Exception as e:
-            logger.error(f"STT failed: {e}")
-            logger.error(f"Error type: {type(e)}")
+        except Exception:
+            logger.exception("STT failed")
             return ""
 
     def _log_llm_messages(self, messages: list):
@@ -231,8 +230,8 @@ class AIService:
             logger.info(f"LLM Extract Response | Content: {content}")
             data = json.loads(content)
             return ContactExtracted(**data)
-        except Exception as e:
-            logger.error(f"Extraction failed: {e}")
+        except Exception:
+            logger.exception("Extraction failed")
             raise
 
     async def refine_contact_info(self, old_summary: str, update_text: str) -> ContactExtracted:
@@ -260,8 +259,8 @@ class AIService:
             logger.info(f"LLM Refine Response | Content: {content}")
             data = json.loads(content)
             return ContactExtracted(**data)
-        except Exception as e:
-            logger.error(f"Refinement failed: {e}")
+        except Exception:
+            logger.exception("Refinement failed")
             # Fallback: просто используем экстрактор на новом тексте, если рефайнер упал
             return await self.extract_contact_info(update_text)
 
@@ -338,8 +337,8 @@ class AIService:
             logger.info(f"Rerank Result: {len(candidates)} -> {len(filtered)}")
             return filtered
             
-        except Exception as e:
-            logger.error(f"Rerank failed: {e}")
+        except Exception:
+            logger.exception("Rerank failed")
             return candidates
 
     async def extract_user_bio(self, text: str) -> str:
@@ -369,8 +368,8 @@ class AIService:
             content = response.choices[0].message.content
             logger.info(f"LLM Bio Response | Content: {content}")
             return content
-        except Exception as e:
-            logger.error(f"Bio extraction failed: {e}")
+        except Exception:
+            logger.exception("Bio extraction failed")
             return text  # Fallback to raw text
 
     async def run_router_agent(self, user_text: str, user_id: int) -> Union[str, List[SearchResult], ContactCreate, ContactDraft, ContactDeleteAsk, ActionConfirmed, ActionCancelled]:
@@ -584,7 +583,7 @@ class AIService:
                         except Exception as e:
                             from app.services.search_service import AccessDenied
                             if isinstance(e, AccessDenied):
-                                logger.warning(f"[ai_service] delete_contact: AccessDenied - {e}")
+                                logger.warning("[ai_service] delete_contact: AccessDenied - {err}", err=str(e))
                                 tool_result_content = "ERROR: Access Denied. Contact does not belong to you."
                             else:
                                 logger.exception("[ai_service] delete_contact failed")
@@ -687,7 +686,7 @@ class AIService:
         except Exception as e:
             from app.services.search_service import AccessDenied
             if isinstance(e, AccessDenied):
-                logger.warning(f"Access Denied during agent execution: {e}")
+                logger.warning("Access Denied during agent execution: {err}", err=str(e))
                 return str(e)
             
             # Безопасное логирование без утечки ключей. Статичный шаблон,

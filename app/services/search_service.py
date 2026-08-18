@@ -121,8 +121,8 @@ class SearchService:
             if not response.data:
                 return None
             return ContactInDB(**response.data[0])
-        except Exception as e:
-            logger.error(f"Error updating contact: {e}")
+        except Exception:
+            logger.exception("Error updating contact")
             raise
 
     async def delete_contact(self, contact_id: UUID | str, user_id: int) -> bool:
@@ -167,8 +167,8 @@ class SearchService:
                 .eq("user_id", user_id)\
                 .execute()
             return response.count or 0
-        except Exception as e:
-            logger.error(f"Error counting contacts: {e}")
+        except Exception:
+            logger.exception("Error counting contacts")
             return 0
 
     async def find_similar_contacts_by_name(self, name: str, user_id: int) -> list[ContactInDB]:
@@ -187,8 +187,8 @@ class SearchService:
                 return []
                 
             return [ContactInDB(**item) for item in response.data]
-        except Exception as e:
-            logger.error(f"Find similar failed: {e}")
+        except Exception:
+            logger.exception("Find similar failed")
             return []
 
     async def get_recent_contacts(self, user_id: int, limit: int = 10) -> list[SearchResult]:
@@ -340,8 +340,8 @@ class SearchService:
                                 res = SearchResult(**item)
                                 if not any(r.id == res.id for r in sql_results):
                                     sql_results.append(res)
-            except Exception as e:
-                logger.error(f"SQL Search failed: {e}")
+            except Exception:
+                logger.exception("SQL Search failed")
 
             # 2. Vector Search (Semantic) - Priority 2
             vector_results = []
@@ -363,8 +363,8 @@ class SearchService:
                         # Если есть org_id, фильтруем
                         if org_id:
                             vector_results = [r for r in vector_results if str(r.org_id) == str(org_id)]
-            except Exception as e:
-                logger.error(f"Vector Search failed: {e}")
+            except Exception:
+                logger.exception("Vector Search failed")
 
             # 3. Merge & Deduplicate
             # Use a dict to keep unique contacts, preserving order (SQL first)
@@ -394,8 +394,8 @@ class SearchService:
                 
             return final_results
             
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
+        except Exception:
+            logger.exception("Search failed")
             raise
 
 search_service = SearchService()

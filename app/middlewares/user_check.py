@@ -50,8 +50,8 @@ class UserCheckMiddleware(BaseMiddleware):
                     "👇 Давай сразу к делу: <b>напиши, кто ты сейчас и кого ищем?</b>\n"
                     "<i>(Или нажми /start, если хочешь по классике)</i>"
                 )
-            except Exception as e:
-                logger.error(f"Failed to send welcome back message: {e}")
+            except Exception:
+                logger.exception("Failed to send welcome back message")
                 
             # We updated the user and sent the message. 
             # We should continue to handler? 

@@ -42,8 +42,8 @@ class RecallService:
             
             return selected
             
-        except Exception as e:
-            logger.error(f"Error getting priority contacts for {user_id}: {e}")
+        except Exception:
+            logger.exception(f"Error getting priority contacts for {user_id}")
             return []
 
     async def generate_recall_message(self, contacts: list, bio: str = None, focus: str = None) -> str:
@@ -96,8 +96,8 @@ class RecallService:
             if content.endswith("```"): content = content[:-3]
                 
             return content.strip()
-        except Exception as e:
-            logger.error(f"Error generating recall message: {e}")
+        except Exception:
+            logger.exception("Error generating recall message")
             return "Не смог придумать повод. Попробуй позже."
 
     @tenacity.retry(
@@ -188,7 +188,7 @@ class RecallService:
                     await user_service.update_recall_settings(user_id, RecallSettings(**rs))
                     
                 except Exception as e:
-                    logger.warning(f"Failed to send message for {user_id}: {e}")
+                    logger.warning("Failed to send message for {uid}: {err}", uid=user_id, err=repr(e))
                 
                 await asyncio.sleep(0.5)
 
@@ -196,7 +196,7 @@ class RecallService:
 
         except Exception as e:
             # We re-raise to let tenacity retry, unless it's the last attempt
-            logger.error(f"Recall process attempt failed: {e}")
+            logger.exception("Recall process attempt failed")
             raise e
 
 recall_service = RecallService()

@@ -21,8 +21,8 @@ async def check_connection():
         
         logger.success(f"Connection successful! Users count: {response.count}")
         return True
-    except Exception as e:
-        logger.error(f"Connection failed: {e}")
+    except Exception:
+        logger.exception("Connection failed")
         return False
 
 if __name__ == "__main__":

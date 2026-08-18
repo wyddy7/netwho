@@ -27,8 +27,8 @@ async def revoke_access(user_id: int):
         else:
             logger.error("❌ Failed to update user (User not found?).")
             
-    except Exception as e:
-        logger.error(f"Error: {e}")
+    except Exception:
+        logger.exception("Error")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

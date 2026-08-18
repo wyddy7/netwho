@@ -35,6 +35,6 @@ class KeepTyping:
                 await asyncio.sleep(self.interval)
         except asyncio.CancelledError:
             raise
-        except Exception as e:
-            logger.error(f"Failed to send chat action: {e}")
+        except Exception:
+            logger.exception("Failed to send chat action")
 

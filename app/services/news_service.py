@@ -52,8 +52,8 @@ class NewsService:
                     else:
                         logger.error(f"Jina API error: {response.status}")
                         return ""
-        except Exception as e:
-            logger.error(f"Failed to fetch article: {e}")
+        except Exception:
+            logger.exception("Failed to fetch article")
             return ""
 
 news_service = NewsService()

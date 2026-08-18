@@ -20,8 +20,8 @@ class SupabaseClient:
                     settings.SUPABASE_URL,
                     api_key
                 )
-            except Exception as e:
-                logger.error(f"Failed to initialize Supabase client: {e}")
+            except Exception:
+                logger.exception("Failed to initialize Supabase client")
                 raise
         return cls._instance
 

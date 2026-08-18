@@ -41,6 +41,22 @@ jobs:
         # loguru, f-string + format args). Stdlib-only, no deps.
         run: python scripts/check_logging.py
 
+      - name: Sibling scan (exception logged without its type)
+        # An exception interpolated into a log template loses its TYPE:
+        # str(KeyError('x')) prints "'x'", str(httpx.ReadTimeout()) is an
+        # empty string — a blank log line for a live failure. Use
+        # logger.exception("static message"), or pass the value as a kwarg:
+        # logger.error("failed: {err}", err=repr(e)). Brought to 0 on
+        # 2026-08-19; this step keeps it at 0.
+        run: |
+          matches=$(grep -rnE 'log(ger)?\.(error|warning|critical)\(f?["'\''][^"'\'']*\{e\}' . --include="*.py" --exclude-dir=.venv | grep -vE 'type\(e\)|__class__|\.exception\(' || true)
+          if [ -n "$matches" ]; then
+            echo "$matches"
+            echo "Exception interpolated into a log message without its type (see the comment on this step)."
+            exit 1
+          fi
+          echo "sibling scan: OK"
+
       - name: Test the logging guard (pinned to loguru internals)
         # app/logging_guard.py patches loguru==0.7.3 private API and
         # self-verifies at startup; run its tests here so a loguru version

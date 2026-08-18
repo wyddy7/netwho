@@ -53,8 +53,8 @@ class AudioService:
             if os.path.exists(mp3_path):
                 os.remove(mp3_path)
             raise RuntimeError(f"FFmpeg conversion error: {e.stderr.decode()}")
-        except Exception as e:
-            logger.error(f"Audio conversion failed: {e}")
+        except Exception:
+            logger.exception("Audio conversion failed")
             if os.path.exists(mp3_path):
                 os.remove(mp3_path)
             raise
@@ -67,5 +67,5 @@ class AudioService:
                 p.unlink()
                 logger.debug(f"Deleted temp file: {path}")
         except Exception as e:
-            logger.warning(f"Failed to delete temp file {path}: {e}")
+            logger.warning("Failed to delete temp file {path}: {err}", path=path, err=repr(e))
 

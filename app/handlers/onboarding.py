@@ -38,8 +38,8 @@ async def process_voice_input(message: types.Message) -> str:
         if text:
              await message.answer(f"🗣 <i>\"{text}\"</i>")
         return text
-    except Exception as e:
-        logger.error(f"Voice error: {e}")
+    except Exception:
+        logger.exception("Voice error")
         await status_msg.edit_text("❌ Ошибка обработки голоса.")
         return ""
     finally:
@@ -104,8 +104,8 @@ async def cmd_start(message: types.Message, state: FSMContext):
             )
             return
             
-    except Exception as e:
-        logger.error(f"Registration error: {e}")
+    except Exception:
+        logger.exception("Registration error")
         await message.answer("⚠ Ошибка старта.")
         return
 
@@ -284,7 +284,7 @@ async def process_first_contact_step(message: types.Message, state: FSMContext):
         
         await state.clear()
         
-    except Exception as e:
-        logger.error(f"Onboarding contact error: {e}")
+    except Exception:
+        logger.exception("Onboarding contact error")
         await message.answer("⚠ Что-то пошло не так. Но мы почти закончили. Попробуй /start еще раз.")
         await state.clear()

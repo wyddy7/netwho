@@ -14,8 +14,8 @@ class OrgRepository:
             if res.data:
                 return res.data[0]
             return None
-        except Exception as e:
-            logger.error(f"Error getting org {org_id}: {e}")
+        except Exception:
+            logger.exception(f"Error getting org {org_id}")
             return None
 
     async def get_user_orgs(self, user_id: int):
@@ -35,8 +35,8 @@ class OrgRepository:
                 } 
                 for row in res.data if row.get('organizations')
             ]
-        except Exception as e:
-            logger.error(f"Error fetching user orgs: {e}")
+        except Exception:
+            logger.exception("Error fetching user orgs")
             return []
 
     async def create_org(self, name: str, owner_id: int):
@@ -61,8 +61,8 @@ class OrgRepository:
             }).execute()
             
             return {'id': org_id, 'invite_code': invite_code}
-        except Exception as e:
-            logger.error(f"Create Org failed: {e}")
+        except Exception:
+            logger.exception("Create Org failed")
             raise
 
     async def add_member(self, user_id: int, org_id: str, role: str = 'member', status: str = 'pending') -> bool:
@@ -91,8 +91,8 @@ class OrgRepository:
             }).execute()
             
             return True
-        except Exception as e:
-            logger.error(f"Error adding member {user_id} to org {org_id}: {e}")
+        except Exception:
+            logger.exception(f"Error adding member {user_id} to org {org_id}")
             raise
 
     async def get_user_memberships(self, user_id: int) -> List[Dict]:
@@ -102,8 +102,8 @@ class OrgRepository:
         try:
             res = self.db.table('organization_members').select('org_id, status, organizations(name)').eq('user_id', user_id).execute()
             return res.data
-        except Exception as e:
-            logger.error(f"Error fetching memberships for user {user_id}: {e}")
+        except Exception:
+            logger.exception(f"Error fetching memberships for user {user_id}")
             return []
 
     async def get_pending_members_for_owner(self, owner_id: int) -> List[Dict]:
@@ -137,8 +137,8 @@ class OrgRepository:
                     'full_name': user_info.get('full_name', 'Unknown')
                 })
             return pending
-        except Exception as e:
-            logger.error(f"Error fetching pending members: {e}")
+        except Exception:
+            logger.exception("Error fetching pending members")
             return []
 
     async def update_member_status(self, user_id: int, org_id: str, status: str) -> bool:
@@ -152,8 +152,8 @@ class OrgRepository:
                 .eq('org_id', org_id)\
                 .execute()
             return bool(res.data)
-        except Exception as e:
-            logger.error(f"Error updating member status: {e}")
+        except Exception:
+            logger.exception("Error updating member status")
             return False
 
     async def is_org_owner(self, user_id: int) -> bool:
@@ -163,8 +163,8 @@ class OrgRepository:
         try:
             res = self.db.table('organizations').select('id').eq('owner_id', user_id).limit(1).execute()
             return bool(res.data)
-        except Exception as e:
-            logger.error(f"Error checking org ownership: {e}")
+        except Exception:
+            logger.exception("Error checking org ownership")
             return False
 
     async def is_specific_org_owner(self, user_id: int, org_id: str) -> bool:
@@ -174,6 +174,6 @@ class OrgRepository:
         try:
             res = self.db.table('organizations').select('id').eq('owner_id', user_id).eq('id', org_id).limit(1).execute()
             return bool(res.data)
-        except Exception as e:
-            logger.error(f"Error checking specific org ownership: {e}")
+        except Exception:
+            logger.exception("Error checking specific org ownership")
             return False

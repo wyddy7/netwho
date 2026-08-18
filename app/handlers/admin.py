@@ -89,7 +89,7 @@ async def handle_org_action(callback: types.CallbackQuery):
                     "Твоя заявка одобрена. Теперь тебе доступен поиск по контактам этой организации."
                 )
             except Exception as e:
-                logger.warning(f"Could not notify user {target_user_id}: {e}")
+                logger.warning("Could not notify user {uid}: {err}", uid=target_user_id, err=repr(e))
         else:
             await callback.answer("❌ Ошибка при одобрении.", show_alert=True)
             
@@ -103,7 +103,7 @@ async def handle_org_action(callback: types.CallbackQuery):
                     f"😔 К сожалению, твоя заявка в <b>{org_name}</b> была отклонена администратором."
                 )
             except Exception as e:
-                logger.warning(f"Could not notify user {target_user_id}: {e}")
+                logger.warning("Could not notify user {uid}: {err}", uid=target_user_id, err=repr(e))
         else:
             await callback.answer("❌ Ошибка при отклонении.", show_alert=True)
 
@@ -140,7 +140,7 @@ async def cmd_give_pro(message: types.Message):
     except ValueError:
         await message.reply("❌ Invalid format. Use numbers.")
     except Exception as e:
-        logger.error(f"Give pro error: {e}")
+        logger.exception("Give pro error")
         await message.reply(f"❌ Error: {e}")
 
 @router.message(Command("revoke_pro"))
@@ -173,7 +173,7 @@ async def cmd_revoke_pro(message: types.Message):
     except ValueError:
         await message.reply("❌ Invalid format. Use numbers.")
     except Exception as e:
-        logger.error(f"Revoke pro error: {e}")
+        logger.exception("Revoke pro error")
         await message.reply(f"❌ Error: {e}")
 
 @router.message(Command("check_user"))
@@ -253,7 +253,7 @@ async def cmd_debug_user(message: types.Message):
         await message.reply(debug_text)
         
     except Exception as e:
-        logger.error(f"Debug user error: {e}")
+        logger.exception("Debug user error")
         await message.reply(f"❌ Error: {e}")
 
 @router.message(Command("create_org"))
@@ -288,5 +288,5 @@ async def cmd_create_org(message: types.Message):
             f"Invite Code: <code>{result['invite_code']}</code>"
         )
     except Exception as e:
-        logger.error(f"Create org error: {e}")
+        logger.exception("Create org error")
         await message.reply(f"❌ Error: {e}")

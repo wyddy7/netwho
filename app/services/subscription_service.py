@@ -93,14 +93,14 @@ async def run_amnesty_logic(bot: Bot):
                     await bot.send_message(chat_id=user_id, text=msg_text)
                     logger.info(f"Updated and notified user {user_id}")
                 except Exception as e:
-                    logger.warning(f"Updated user {user_id} but failed to send message: {e}")
+                    logger.warning("Updated user {uid} but failed to send message: {err}", uid=user_id, err=repr(e))
                     
                 await asyncio.sleep(0.1) # Throttling
                 
-            except Exception as e:
-                logger.error(f"Failed to process user {user_id}: {e}")
+            except Exception:
+                logger.exception(f"Failed to process user {user_id}")
                 
         logger.info(f"Amnesty finished. Updated {updated_count} users.")
         
-    except Exception as e:
-        logger.error(f"Global error: {e}")
+    except Exception:
+        logger.exception("Global error")

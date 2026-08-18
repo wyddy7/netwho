@@ -23,8 +23,8 @@ class UserService:
             if not response.data:
                 raise ValueError("Failed to upsert user")
             return UserInDB(**response.data[0])
-        except Exception as e:
-            logger.error(f"Error upserting user: {e}")
+        except Exception:
+            logger.exception("Error upserting user")
             raise
 
     async def get_user(self, user_id: int) -> UserInDB | None:
@@ -33,8 +33,8 @@ class UserService:
             if not response.data:
                 return None
             return UserInDB(**response.data[0])
-        except Exception as e:
-            logger.error(f"Error getting user: {e}")
+        except Exception:
+            logger.exception("Error getting user")
             return None
 
     async def update_user_field(self, user_id: int, field: str, value: Any) -> bool:
@@ -44,8 +44,8 @@ class UserService:
                 .eq("id", user_id)\
                 .execute()
             return bool(response.data)
-        except Exception as e:
-            logger.error(f"Error updating user field {field}: {e}")
+        except Exception:
+            logger.exception(f"Error updating user field {field}")
             return False
 
     async def update_settings(self, user_id: int, settings: UserSettings) -> bool:
@@ -113,8 +113,8 @@ class UserService:
                 .eq("id", user_id)\
                 .execute()
             return bool(response.data)
-        except Exception as e:
-            logger.error(f"Error updating subscription: {e}")
+        except Exception:
+            logger.exception("Error updating subscription")
             return False
 
     async def revoke_subscription(self, user_id: int) -> bool:
@@ -133,8 +133,8 @@ class UserService:
                 .execute()
             
             return bool(response.data)
-        except Exception as e:
-            logger.error(f"Error revoking subscription: {e}")
+        except Exception:
+            logger.exception("Error revoking subscription")
             return False
             
     async def grant_trial(self, user_id: int, days: int = None) -> bool:
@@ -153,8 +153,8 @@ class UserService:
                 .eq("id", user_id)\
                 .execute()
             return bool(response.data)
-        except Exception as e:
-            logger.error(f"Error granting trial: {e}")
+        except Exception:
+            logger.exception("Error granting trial")
             return False
 
     async def increment_news_jacks(self, user_id: int) -> int:
@@ -171,8 +171,8 @@ class UserService:
             new_count = user.news_jacks_count + 1
             await self.update_user_field(user_id, "news_jacks_count", new_count)
             return new_count
-        except Exception as e:
-            logger.error(f"Error incrementing news jacks: {e}")
+        except Exception:
+            logger.exception("Error incrementing news jacks")
             return 999
 
     async def accept_terms(self, user_id: int) -> bool:
@@ -182,8 +182,8 @@ class UserService:
                 .eq("id", user_id)\
                 .execute()
             return bool(response.data)
-        except Exception as e:
-            logger.error(f"Error accepting terms: {e}")
+        except Exception:
+            logger.exception("Error accepting terms")
             return False
 
     async def delete_user_full(self, user_id: int) -> bool:
@@ -193,14 +193,14 @@ class UserService:
             # 1. Delete Contacts (if not cascaded)
             try:
                 self.supabase.table("contacts").delete().eq("user_id", user_id).execute()
-            except Exception as e:
-                logger.error(f"Error deleting contacts: {e}")
+            except Exception:
+                logger.exception("Error deleting contacts")
 
             # 2. Delete Chat History
             try:
                 self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
-            except Exception as e:
-                logger.error(f"Error deleting chat history: {e}")
+            except Exception:
+                logger.exception("Error deleting chat history")
 
             # 3. Wipe User Data (BUT KEEP ID & SUBSCRIPTION)
             # We do NOT delete the user row anymore to prevent subscription abuse (re-registering for trial).
@@ -216,8 +216,8 @@ class UserService:
             
             response = self.supabase.table("users").update(updates).eq("id", user_id).execute()
             return bool(response.data)
-        except Exception as e:
-            logger.error(f"Error deleting user: {e}")
+        except Exception:
+            logger.exception("Error deleting user")
             raise
 
     async def get_chat_history(self, user_id: int) -> List[dict]:
@@ -243,8 +243,8 @@ class UserService:
                 return []
                 
             return [{"role": item["role"], "content": item["content"]} for item in response.data]
-        except Exception as e:
-            logger.error(f"Failed to fetch chat history: {e}")
+        except Exception:
+            logger.exception("Failed to fetch chat history")
             return []
 
     async def save_chat_message(self, user_id: int, role: str, content: str):
@@ -268,7 +268,7 @@ class UserService:
             if "violates foreign key constraint" in str(e):
                 logger.warning(f"Skipped saving chat log for non-existent user {user_id}")
             else:
-                logger.error(f"Failed to save chat message: {e}")
+                logger.exception("Failed to save chat message")
 
     async def clear_history(self, user_id: int):
         """
@@ -277,8 +277,8 @@ class UserService:
         try:
             # Удаляем все записи из chat_history для данного user_id
             self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
-        except Exception as e:
-            logger.error(f"Failed to clear chat history: {e}")
+        except Exception:
+            logger.exception("Failed to clear chat history")
 
     async def delete_last_messages(self, user_id: int, count: int) -> int:
         """
@@ -305,8 +305,8 @@ class UserService:
                 .execute()
                 
             return len(ids_to_delete)
-        except Exception as e:
-            logger.error(f"Failed to delete last {count} messages: {e}")
+        except Exception:
+            logger.exception(f"Failed to delete last {count} messages")
             return 0
 
     async def join_org(self, user_id: int, org_id: str) -> dict:
@@ -385,8 +385,8 @@ class UserService:
                 return False, msg
                 
             return True, ""
-        except Exception as e:
-            logger.error(f"Error checking search limit: {e}")
+        except Exception:
+            logger.exception("Error checking search limit")
             return True, ""
 
 user_service = UserService()

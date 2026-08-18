@@ -339,7 +339,7 @@ async def reset_history_confirm(callback: types.CallbackQuery):
         await show_history(callback)
     except Exception as e:
         if "message is not modified" not in str(e):
-            logger.error(f"Error resetting history UI: {e}")
+            logger.exception("Error resetting history UI")
 
 @router.callback_query(F.data.startswith("toggle_"))
 async def toggle_setting(callback: types.CallbackQuery):

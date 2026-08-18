@@ -131,7 +131,7 @@ async def revoke_pro_command(message: Message):
     except ValueError:
         await message.answer("ID должен быть числом.")
     except Exception as e:
-        logger.error(f"Error revoking pro: {e}")
+        logger.exception("Error revoking pro")
         await message.answer(f"Error: {e}")
 
 @router.message(Command("give_pro"))
@@ -172,7 +172,7 @@ async def give_pro_command(message: Message):
     except ValueError:
         await message.answer("ID и дни должны быть числами.")
     except Exception as e:
-        logger.error(f"Error giving pro: {e}")
+        logger.exception("Error giving pro")
         await message.answer(f"Error: {e}")
 
 @router.message(Command("broadcast_amnesty"))

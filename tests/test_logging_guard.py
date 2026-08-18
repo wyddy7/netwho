@@ -117,7 +117,7 @@ class TestCheckLoggingGate:
 
     def test_catches_fstring_plus_kwargs(self, tmp_path):
         assert self._problems(
-            tmp_path, 'logger.error(f"failed: {e}", user=user_id)\n'
+            tmp_path, 'logger.error(f"failed: {err}", user=user_id)\n'
         )
 
     def test_allows_static_template_with_kwargs(self, tmp_path):

@@ -65,8 +65,8 @@ async def handle_voice(message: types.Message):
             # 5. Обрабатываем ответ агента (через общую функцию из text.py)
             await handle_agent_response(message, response)
         
-    except Exception as e:
-        logger.error(f"Voice pipeline error: {e}")
+    except Exception:
+        logger.exception("Voice pipeline error")
         await status_msg.edit_text("❌ Ошибка обработки.")
     finally:
         AudioService.cleanup_file(ogg_path)

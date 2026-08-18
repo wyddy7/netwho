@@ -24,8 +24,8 @@ async def on_startup(bot: Bot):
     try:
         supabase_client = get_supabase()
         logger.info("Supabase client initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {e}")
+    except Exception:
+        logger.exception("Failed to initialize Supabase client")
         raise
     
     try:
@@ -40,7 +40,7 @@ async def on_startup(bot: Bot):
         await user_service.clear_history(ADMIN_ID)
         logger.info(f"History cleared for user {ADMIN_ID}")
     except Exception as e:
-        logger.error(f"Failed to send startup message: {e}")
+        logger.error("Failed to send startup message: {err}", err=repr(e))
 
 async def main():
     logger.info("Starting NetWho Bot...")
@@ -96,8 +96,8 @@ async def main():
     
     try:
         await dp.start_polling(bot)
-    except Exception as e:
-        logger.error(f"Bot stopped with error: {e}")
+    except Exception:
+        logger.exception("Bot stopped with error")
     finally:
         await bot.session.close()
 
