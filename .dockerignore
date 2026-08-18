@@ -7,3 +7,19 @@ venv
 .venv
 temp_voice
 
+
+# Editor / agent scratch — these reached the image via "COPY . ." and one of
+# them (an old Cursor spec) tripped a secret scan with placeholder tokens.
+.cursor
+.idea
+.claude
+
+# Not needed at runtime. Keep *.yaml OUT of this list: prompts.yaml is read
+# from the working directory at startup, and sitecustomize.py at the repo root
+# installs the logging guard for every interpreter in the container.
+.github
+tests
+*.md
+.pytest_cache
+.ruff_cache
+.env.*

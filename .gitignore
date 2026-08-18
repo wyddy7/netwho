@@ -39,3 +39,6 @@ build/
 
 
 
+
+# Editor scratch — Cursor unused since early 2026, keep it from creeping back
+.cursor/
