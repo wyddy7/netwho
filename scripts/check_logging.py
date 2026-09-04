@@ -2,7 +2,7 @@
 """CI gate: ban loguru logging calls that can raise. Stdlib-only, no deps.
 
 netwho logs through loguru, and loguru re-formats the message whenever a
-logging call carries ANY extra args/kwargs. Two call shapes are therefore
+logging call carries ANY extra args/kwargs. Three call shapes are therefore
 build errors here:
 
 1. stdlib-only kwargs: ``logger.error(..., exc_info=True)`` (also
@@ -17,6 +17,9 @@ build errors here:
    Use a static template and pass values as kwargs:
    ``logger.error("failed: {m}", m=str(e))`` — substituted values are never
    re-formatted.
+
+3. A sensitive setting passed to a log call, either inside an f-string or as
+   a format value. Presence may be logged as ``bool(...)``; the value may not.
 
 AST-based on purpose: the incident's 9th call site was multiline and
 invisible to grep. Escape hatch for intentional cases (the guard's own
@@ -38,10 +41,34 @@ LOG_METHODS = {
 STDLIB_ONLY_KWARGS = {"exc_info", "stack_info", "stacklevel"}
 SKIP_DIRS = {".venv", "venv", "__pycache__", ".git", ".mypy_cache", ".ruff_cache"}
 ALLOW_MARKER = "# logging-ci: allow"
+SENSITIVE_SETTING_NAMES = {
+    "BOT_TOKEN",
+    "GROQ_API_KEY",
+    "OPENROUTER_API_KEY",
+    "PROXY_URL",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_KEY",
+    "SUPABASE_SERVICE_ROLE_KEY",
+}
 
 
 def is_log_call(node: ast.Call) -> bool:
     return isinstance(node.func, ast.Attribute) and node.func.attr in LOG_METHODS
+
+
+def contains_sensitive_setting(node: ast.AST) -> bool:
+    """True when an expression can expose a secret setting's value."""
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "bool"
+    ):
+        return False
+    return any(
+        isinstance(child, ast.Attribute)
+        and child.attr in SENSITIVE_SETTING_NAMES
+        for child in ast.walk(node)
+    )
 
 
 def check_file(path: Path) -> list:
@@ -92,6 +119,18 @@ def check_file(path: Path) -> list:
                 "static template with values as kwargs: "
                 "logger.error(\"failed: {m}\", m=str(e)).",
             ))
+            continue
+
+        # Rule 3: secret setting values must never reach a log sink. Logging
+        # bool(settings.SECRET) is allowed because it reveals presence only.
+        if is_log_call(node) and not allowed(node):
+            log_values = list(node.args) + [kw.value for kw in node.keywords]
+            if any(contains_sensitive_setting(value) for value in log_values):
+                problems.append((
+                    path, node.lineno,
+                    "sensitive setting value passed to a log call. Log only a "
+                    "static presence message or bool(settings.SECRET).",
+                ))
     return problems
 
 

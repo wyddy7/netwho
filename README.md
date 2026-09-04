@@ -4,7 +4,7 @@
 📢 [Telegram Community](https://t.me/netwho) 
 
 ## 🛠 Стек
-*   **Python 3.11+** (в Docker используется 3.11-slim)
+*   **Python 3.13+** (Docker uses `python:3.13-slim`)
 *   **Aiogram 3.x** (Telegram Bot API)
 *   **Supabase** (PostgreSQL + Auth)
 *   **OpenRouter / OpenAI** (LLM inference)
@@ -67,6 +67,8 @@
 | `LOG_LEVEL` | ❌ | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR` (дефолт: `INFO`) |
 | `GROQ_API_KEY` | ❌ | Для распознавания ГС (если не задан — войсы игнорируются) |
 | `LLM_MODEL` | ❌ | Дефолт: `openai/gpt-4o-mini` |
+| `PROXY_URL` | ❌ | Proxy for the LLM client; may contain credentials and is never logged |
+| `HTTPS_PROXY` / `HTTP_PROXY` | ❌ | Proxy fallback used by the Telegram session |
 
 ## 📦 База данных и Миграции
 
@@ -89,6 +91,16 @@
 *   `uv run python scripts/revoke_trial.py` — Массовый отзыв триалов (если нужно).
 *   `uv run python scripts/test_ai.py` — Тест LLM коннектора.
 
-## Актуальность
+## Active Recall scheduler
 
-Проект време
+The scheduler runs every 15 minutes. It uses the subscription fields already
+loaded by the batch user query, so it does not issue a per-user `is_pro()`
+lookup. Scheduler policy, production verification, and the before/after DB-call
+count are documented in [`docs/recall-scheduler.md`](docs/recall-scheduler.md).
+
+## Status
+
+📄 Production runtime and deployment details are maintained in the parent
+monorepo's `auto-docs/projects/netwho/server.md`. The public repository keeps
+runtime code, tests, and architecture-level behavior; secrets and host
+coordinates are never stored here.

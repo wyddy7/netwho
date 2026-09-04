@@ -6,6 +6,10 @@ The synchronous Supabase client remains unchanged. This maintenance change only
 removes a redundant lookup from the recall scheduler and bounds the scheduler's
 work after slow or missed runs.
 
+Proxy credentials are outside scheduler scope, but the service-wide logging
+gate now rejects sensitive settings passed to log calls. Startup logs report
+only that a proxy is configured, never its URL or embedded credentials.
+
 ## Before and after
 
 📄 **Before (production-log baseline, 2026-08-18):** in a 5 h 35 min healthy

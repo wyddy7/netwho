@@ -133,7 +133,9 @@ class AIService:
         http_client = None
         if settings.PROXY_URL:
             import httpx
-            logger.info(f"Using PROXY: {settings.PROXY_URL}")
+            # A proxy URL commonly embeds username/password credentials.
+            # Presence is useful operational context; the value is a secret.
+            logger.info("Proxy configured for LLM client")
             http_client = httpx.AsyncClient(proxy=settings.PROXY_URL)
 
         self.llm_client = AsyncOpenAI(

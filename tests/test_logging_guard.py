@@ -135,6 +135,23 @@ class TestCheckLoggingGate:
             tmp_path, 'logger.error("x", exc_info=True)  # logging-ci: allow\n'
         )
 
+    def test_catches_secret_in_fstring(self, tmp_path):
+        assert self._problems(
+            tmp_path, 'logger.info(f"proxy={settings.PROXY_URL}")\n'
+        )
+
+    def test_catches_secret_as_format_value(self, tmp_path):
+        assert self._problems(
+            tmp_path,
+            'logger.info("proxy={proxy}", proxy=settings.PROXY_URL)\n',
+        )
+
+    def test_allows_secret_presence_as_boolean(self, tmp_path):
+        assert not self._problems(
+            tmp_path,
+            'logger.info("has_proxy={value}", value=bool(settings.PROXY_URL))\n',
+        )
+
     def test_repo_tree_is_clean(self):
         """Zero forbidden calls in the actual codebase."""
         root = Path(__file__).resolve().parent.parent
