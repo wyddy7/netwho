@@ -11,7 +11,7 @@ from loguru import logger
 from app.config import settings
 from app.handlers import base, voice, text, settings as settings_handler, profile, onboarding
 from app.services.user_service import user_service
-from app.services.recall_service import recall_service
+from app.scheduler import configure_recall_scheduler
 from app.infrastructure.supabase.client import get_supabase
 
 # Твой ID для уведомлений (можно вынести в .env, но пока так)
@@ -86,8 +86,7 @@ async def main():
     
     # Scheduler Setup
     scheduler = AsyncIOScheduler()
-    # Запускаем каждую минуту, чтобы попадать в пользовательские таймслоты
-    scheduler.add_job(recall_service.process_recalls, "cron", minute='*', args=[bot])
+    configure_recall_scheduler(scheduler, bot)
     
     scheduler.start()
     logger.info("Scheduler started")

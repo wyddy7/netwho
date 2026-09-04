@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-from typing import Any, List, Dict
+from typing import Any, Dict, List, Mapping
 from loguru import logger
 from app.infrastructure.supabase.client import get_supabase
 from app.schemas import RecallSettings, UserCreate, UserInDB, UserSettings
@@ -64,21 +64,56 @@ class UserService:
         user = await self.get_user(user_id)
         if not user:
             return False
-        
+
         now = datetime.now(timezone.utc)
-        
-        # 1. Check Paid Subscription
-        if user.pro_until and user.pro_until > now:
-            logger.debug(f"User {user_id} is PRO (Paid until {user.pro_until})")
-            return True
-            
-        # 2. Check Trial
-        if user.trial_ends_at and user.trial_ends_at > now:
-            logger.debug(f"User {user_id} is PRO (Trial until {user.trial_ends_at})")
-            return True
-        
-        logger.debug(f"User {user_id} is FREE (Trial ends: {user.trial_ends_at}, Pro until: {user.pro_until}, Now: {now})")
-        return False
+        is_pro = self.is_pro_from_loaded_row(
+            {
+                "pro_until": user.pro_until,
+                "trial_ends_at": user.trial_ends_at,
+            },
+            now=now,
+        )
+        logger.debug(
+            "User {user_id} subscription decision: is_pro={is_pro}; "
+            "trial_ends_at={trial_ends_at}; pro_until={pro_until}; now={now}",
+            user_id=user_id,
+            is_pro=is_pro,
+            trial_ends_at=user.trial_ends_at,
+            pro_until=user.pro_until,
+            now=now,
+        )
+        return is_pro
+
+    @staticmethod
+    def is_pro_from_loaded_row(user: Mapping[str, Any], *, now: datetime | None = None) -> bool:
+        """Return subscription status from a row already selected from ``users``.
+
+        This deliberately performs no I/O.  Batch jobs which selected ``users.*``
+        must use it instead of calling :meth:`is_pro` for every row.
+        """
+        now = now or datetime.now(timezone.utc)
+
+        def is_active(field: str) -> bool:
+            value = user.get(field)
+            if not value:
+                return False
+            try:
+                if isinstance(value, str):
+                    value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if value.tzinfo is None:
+                    value = value.replace(tzinfo=timezone.utc)
+                return value > now
+            except (AttributeError, TypeError, ValueError):
+                logger.warning(
+                    "Ignoring invalid subscription timestamp for user {user_id}: "
+                    "{field}={value}",
+                    user_id=user.get("id"),
+                    field=field,
+                    value=repr(value),
+                )
+                return False
+
+        return is_active("pro_until") or is_active("trial_ends_at")
 
     async def update_subscription(self, user_id: int, days: int) -> bool:
         """

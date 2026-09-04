@@ -137,14 +137,23 @@ class RecallService:
                 days = rs.get('days', [4])
 
                 # --- FREEMIUM CHECK ---
-                is_pro = await user_service.is_pro(user_id)
+                # ``users_response`` selected every subscription field already.
+                # Do not turn this batch into a per-user get_user() N+1 query.
+                is_pro = user_service.is_pro_from_loaded_row(user)
                 if not is_pro:
                     active_days = sorted(days)
                     if active_days:
                         allowed_day = active_days[0]
                         if today_weekday != allowed_day:
-                             logger.debug(f"Free user {user_id} has days {days}, but allowed only {allowed_day}. Skip.")
-                             continue
+                            logger.debug(
+                                "Recall skip: free user {user_id}; today_weekday={today_weekday}; "
+                                "configured_days={days}; allowed_day={allowed_day}",
+                                user_id=user_id,
+                                today_weekday=today_weekday,
+                                days=days,
+                                allowed_day=allowed_day,
+                            )
+                            continue
                 
                 if today_weekday not in days:
                     continue
