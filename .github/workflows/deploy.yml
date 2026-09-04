@@ -191,7 +191,7 @@ jobs:
               sleep 15
               # Scan for tracebacks only in the STARTUP section (up to the
               # marker). After the marker the bot is serving, and a retryable
-              # application error — the recall job runs every minute and talks
+              # application error — the recall job runs every 15 minutes and talks
               # to Supabase — is not a failed deploy. Rolling back a healthy
               # image on one transient network blip is the worse failure.
               if docker logs netwho 2>&1 | sed '/Bot started/q' \
@@ -232,4 +232,3 @@ jobs:
 
             echo "Deploy verified: startup marker present, no tracebacks."
             docker image prune -f
-

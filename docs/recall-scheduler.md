@@ -9,6 +9,11 @@ work after slow or missed runs.
 Proxy credentials are outside scheduler scope, but the service-wide logging
 gate now rejects sensitive settings passed to log calls. Startup logs report
 only that a proxy is configured, never its URL or embedded credentials.
+Production verification on 2026-09-04 used commit `4a1c492` and immutable image
+digest `sha256:dfdc5afd352c0c8c9541861ee9e95e8649197374dad502843515491908242989`:
+the new static presence marker appeared once, the legacy value-bearing marker
+appeared zero times, the polling marker appeared once, and the container had
+zero restarts and zero tracebacks.
 
 ## Before and after
 
