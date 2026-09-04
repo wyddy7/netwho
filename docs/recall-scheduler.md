@@ -40,3 +40,17 @@ are necessary work and depend on real recall decisions.
   than five minutes late rather than replaying a backlog.
 
 Run the regression proof with `uv run pytest tests/test_recall_scheduler.py`.
+
+## Production verification
+
+📄 On 2026-09-04, commit `d86c033` passed the full GitHub Actions pipeline and
+was deployed as immutable image digest `sha256:051273b25dee50a1b24e0618a06a6e22ce6e0b932b0f4bd3a565d4551866b0ed`.
+The first production tick ran exactly at `07:30:00 UTC` and finished in the
+same second with zero sends and zero errors. In the first 15-minute runtime
+window there was one sweep, zero per-user `is_pro` log entries, zero overlap
+skips, and one contextual free-user decision log containing
+`today_weekday=4`, `configured_days=[5]`, and `allowed_day=5`.
+
+📄 The exact one-query-per-sweep claim is enforced separately by the
+regression test: ten loaded user rows must produce ten in-memory subscription
+decisions, one `users` query, and no call to `get_user()`.
