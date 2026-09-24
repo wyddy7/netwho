@@ -7,7 +7,6 @@ from pathlib import Path
 sys.path.append(os.getcwd())
 
 from app.services.ai_service import ai_service
-from app.services.audio_service import AudioService
 from loguru import logger
 
 async def test_ai_pipeline():
