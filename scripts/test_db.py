@@ -5,6 +5,7 @@ from uuid import uuid4
 
 sys.path.append(os.getcwd())
 
+from app.infrastructure.supabase.client import init_supabase
 from app.services.search_service import search_service
 from app.services.user_service import user_service
 from app.schemas import UserCreate, ContactCreate
@@ -13,6 +14,7 @@ from loguru import logger
 TEST_USER_ID = 123456789
 
 async def test_db_pipeline():
+    await init_supabase()
     logger.info("--- Starting DB Pipeline Test ---")
 
     # 1. Создаем пользователя

@@ -12,8 +12,10 @@ from app.config import settings
 from app.prompts_loader import get_prompt
 
 class RecallService:
-    def __init__(self):
-        self.supabase = get_supabase()
+    @property
+    def supabase(self):
+        # Resolved per call: the shared async client is created in async startup.
+        return get_supabase()
 
     async def get_random_contacts_for_user(self, user_id: int, limit: int = 3):
         """
@@ -23,7 +25,7 @@ class RecallService:
             # 1. Сначала пробуем получить самые старые по last_interaction (NULLS FIRST)
             # Мы делаем это простым запросом, а не RPC, чтобы контролировать сортировку.
             
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .select("id, name, summary, meta, last_interaction, created_at")\
                 .eq("user_id", user_id)\
                 .eq("is_archived", False)\
@@ -113,7 +115,7 @@ class RecallService:
         logger.info("Starting Active Recall process...")
         try:
             # 1. Получаем всех пользователей со всеми полями
-            users_response = self.supabase.table("users").select("*").execute()
+            users_response = await self.supabase.table("users").select("*").execute()
             users = users_response.data
             
             if not users:
