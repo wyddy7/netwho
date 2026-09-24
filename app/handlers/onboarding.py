@@ -24,15 +24,14 @@ async def process_voice_input(message: types.Message) -> str:
     
     os.makedirs("temp_voice", exist_ok=True)
     ogg_path = os.path.join("temp_voice", f"voice_{user_id}_{message.message_id}.ogg")
-    mp3_path = None
     
     try:
         bot = message.bot
         file_info = await bot.get_file(message.voice.file_id)
         await bot.download_file(file_info.file_path, ogg_path)
         
-        mp3_path = AudioService.convert_ogg_to_mp3(ogg_path)
-        text = await ai_service.transcribe_audio(mp3_path)
+        # Groq Whisper принимает ogg/opus напрямую — без конвертации
+        text = await ai_service.transcribe_audio(ogg_path)
         
         await status_msg.delete()
         if text:
@@ -44,8 +43,6 @@ async def process_voice_input(message: types.Message) -> str:
         return ""
     finally:
         AudioService.cleanup_file(ogg_path)
-        if mp3_path:
-            AudioService.cleanup_file(mp3_path)
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):

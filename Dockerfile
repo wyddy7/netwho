@@ -5,10 +5,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /app
 
-# 2. Установка системных зависимостей (ffmpeg для голосовых)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# 2. Системные зависимости не нужны: голосовые (ogg/opus) уходят в Groq
+# Whisper как есть, без конвертации.
 
 # 3. Сначала копируем только файлы зависимостей!
 # Это позволяет Docker'у закэшировать слой с установленными пакетами.
