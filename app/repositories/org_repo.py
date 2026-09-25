@@ -10,7 +10,7 @@ class OrgRepository:
         Returns organization details.
         """
         try:
-            res = self.db.table('organizations').select('*').eq('id', org_id).execute()
+            res = await self.db.table('organizations').select('*').eq('id', org_id).execute()
             if res.data:
                 return res.data[0]
             return None
@@ -25,7 +25,7 @@ class OrgRepository:
         """
         # Return format: [{'id': uuid, 'name': 'Python Heroes', 'status': 'approved'}, ...]
         try:
-            res = self.db.table('organization_members').select('org_id, status, organizations(name)').eq('user_id', user_id).execute()
+            res = await self.db.table('organization_members').select('org_id, status, organizations(name)').eq('user_id', user_id).execute()
             
             return [
                 {
@@ -45,7 +45,7 @@ class OrgRepository:
         """
         try:
             # 1. Create Org
-            res = self.db.table('organizations').insert({'name': name, 'owner_id': owner_id}).execute()
+            res = await self.db.table('organizations').insert({'name': name, 'owner_id': owner_id}).execute()
             if not res.data:
                 raise ValueError("Failed to create org")
             
@@ -53,7 +53,7 @@ class OrgRepository:
             invite_code = res.data[0]['invite_code']
             
             # 2. Add Owner as Member
-            self.db.table('organization_members').insert({
+            await self.db.table('organization_members').insert({
                 'user_id': owner_id, 
                 'org_id': org_id,
                 'role': 'owner',
@@ -72,7 +72,7 @@ class OrgRepository:
         """
         try:
             # Check for existing membership
-            existing = self.db.table('organization_members')\
+            existing = await self.db.table('organization_members')\
                 .select('user_id')\
                 .eq('user_id', user_id)\
                 .eq('org_id', org_id)\
@@ -83,7 +83,7 @@ class OrgRepository:
                 return False
             
             # Add new member
-            self.db.table('organization_members').insert({
+            await self.db.table('organization_members').insert({
                 'user_id': user_id,
                 'org_id': org_id,
                 'role': role,
@@ -100,7 +100,7 @@ class OrgRepository:
         Returns list of orgs user belongs to.
         """
         try:
-            res = self.db.table('organization_members').select('org_id, status, organizations(name)').eq('user_id', user_id).execute()
+            res = await self.db.table('organization_members').select('org_id, status, organizations(name)').eq('user_id', user_id).execute()
             return res.data
         except Exception:
             logger.exception(f"Error fetching memberships for user {user_id}")
@@ -112,7 +112,7 @@ class OrgRepository:
         """
         try:
             # 1. Get all orgs owned by this user
-            orgs_res = self.db.table('organizations').select('id, name').eq('owner_id', owner_id).execute()
+            orgs_res = await self.db.table('organizations').select('id, name').eq('owner_id', owner_id).execute()
             if not orgs_res.data:
                 return []
             
@@ -120,7 +120,7 @@ class OrgRepository:
             org_names = {org['id']: org['name'] for org in orgs_res.data}
             
             # 2. Get pending members for these orgs
-            res = self.db.table('organization_members')\
+            res = await self.db.table('organization_members')\
                 .select('user_id, org_id, users(full_name, username)')\
                 .eq('status', 'pending')\
                 .in_('org_id', org_ids)\
@@ -146,7 +146,7 @@ class OrgRepository:
         Updates member status (approved, banned, pending).
         """
         try:
-            res = self.db.table('organization_members')\
+            res = await self.db.table('organization_members')\
                 .update({'status': status})\
                 .eq('user_id', user_id)\
                 .eq('org_id', org_id)\
@@ -161,7 +161,7 @@ class OrgRepository:
         Checks if user owns at least one organization.
         """
         try:
-            res = self.db.table('organizations').select('id').eq('owner_id', user_id).limit(1).execute()
+            res = await self.db.table('organizations').select('id').eq('owner_id', user_id).limit(1).execute()
             return bool(res.data)
         except Exception:
             logger.exception("Error checking org ownership")
@@ -172,7 +172,7 @@ class OrgRepository:
         Checks if user owns a specific organization.
         """
         try:
-            res = self.db.table('organizations').select('id').eq('owner_id', user_id).eq('id', org_id).limit(1).execute()
+            res = await self.db.table('organizations').select('id').eq('owner_id', user_id).eq('id', org_id).limit(1).execute()
             return bool(res.data)
         except Exception:
             logger.exception("Error checking specific org ownership")

@@ -40,7 +40,7 @@ async def run_amnesty_logic(bot: Bot):
     
     try:
         # 1. Get all users
-        response = supabase.table("users").select("*").execute()
+        response = await supabase.table("users").select("*").execute()
         users = response.data
         
         if not users:
@@ -71,7 +71,7 @@ async def run_amnesty_logic(bot: Bot):
             # Grant Trial
             try:
                 # We can use user_service.grant_trial logic here or direct update
-                supabase.table("users").update({
+                await supabase.table("users").update({
                     "trial_ends_at": trial_end.isoformat()
                 }).eq("id", user_id).execute()
                 

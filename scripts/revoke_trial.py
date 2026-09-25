@@ -7,16 +7,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from loguru import logger
 from app.services.user_service import user_service
-from app.infrastructure.supabase.client import get_supabase
+from app.infrastructure.supabase.client import get_supabase, init_supabase
 
 async def revoke_access(user_id: int):
+    await init_supabase()
     logger.info(f"Revoking access for user {user_id}...")
     
     supabase = get_supabase()
     
     try:
         # Clear both pro_until and trial_ends_at
-        response = supabase.table("users").update({
+        response = await supabase.table("users").update({
             "pro_until": None,
             "trial_ends_at": None,
             "is_premium": False

@@ -6,8 +6,10 @@ from app.schemas import RecallSettings, UserCreate, UserInDB, UserSettings
 from app.config import settings
 
 class UserService:
-    def __init__(self):
-        self.supabase = get_supabase()
+    @property
+    def supabase(self):
+        # Resolved per call: the shared async client is created in async startup.
+        return get_supabase()
 
     async def upsert_user(self, user: UserCreate) -> UserInDB:
         try:
@@ -19,7 +21,7 @@ class UserService:
             # Лучше сначала получить текущего юзера, если надо сохранить настройки.
             # Но для MVP при /start можно и сбросить или оставить как есть.
             
-            response = self.supabase.table("users").upsert(data).execute()
+            response = await self.supabase.table("users").upsert(data).execute()
             if not response.data:
                 raise ValueError("Failed to upsert user")
             return UserInDB(**response.data[0])
@@ -29,7 +31,7 @@ class UserService:
 
     async def get_user(self, user_id: int) -> UserInDB | None:
         try:
-            response = self.supabase.table("users").select("*").eq("id", user_id).execute()
+            response = await self.supabase.table("users").select("*").eq("id", user_id).execute()
             if not response.data:
                 return None
             return UserInDB(**response.data[0])
@@ -39,7 +41,7 @@ class UserService:
 
     async def update_user_field(self, user_id: int, field: str, value: Any) -> bool:
         try:
-            response = self.supabase.table("users")\
+            response = await self.supabase.table("users")\
                 .update({field: value})\
                 .eq("id", user_id)\
                 .execute()
@@ -143,7 +145,7 @@ class UserService:
                 "is_premium": is_premium
             }
             
-            response = self.supabase.table("users")\
+            response = await self.supabase.table("users")\
                 .update(updates)\
                 .eq("id", user_id)\
                 .execute()
@@ -158,7 +160,7 @@ class UserService:
         """
         try:
             # Just clear the date. 
-            response = self.supabase.table("users")\
+            response = await self.supabase.table("users")\
                 .update({
                     "pro_until": None, 
                     "trial_ends_at": None, # Also revoke trial
@@ -183,7 +185,7 @@ class UserService:
             now = datetime.now(timezone.utc)
             trial_end = now + timedelta(days=days)
             
-            response = self.supabase.table("users")\
+            response = await self.supabase.table("users")\
                 .update({"trial_ends_at": trial_end.isoformat()})\
                 .eq("id", user_id)\
                 .execute()
@@ -212,7 +214,7 @@ class UserService:
 
     async def accept_terms(self, user_id: int) -> bool:
         try:
-            response = self.supabase.table("users")\
+            response = await self.supabase.table("users")\
                 .update({"terms_accepted": True})\
                 .eq("id", user_id)\
                 .execute()
@@ -227,13 +229,13 @@ class UserService:
             
             # 1. Delete Contacts (if not cascaded)
             try:
-                self.supabase.table("contacts").delete().eq("user_id", user_id).execute()
+                await self.supabase.table("contacts").delete().eq("user_id", user_id).execute()
             except Exception:
                 logger.exception("Error deleting contacts")
 
             # 2. Delete Chat History
             try:
-                self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
+                await self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
             except Exception:
                 logger.exception("Error deleting chat history")
 
@@ -249,7 +251,7 @@ class UserService:
                 "terms_accepted": False 
             }
             
-            response = self.supabase.table("users").update(updates).eq("id", user_id).execute()
+            response = await self.supabase.table("users").update(updates).eq("id", user_id).execute()
             return bool(response.data)
         except Exception:
             logger.exception("Error deleting user")
@@ -269,7 +271,7 @@ class UserService:
                 limit = 3 # "Короткая память" для Free
                 
             # Вызываем RPC функцию
-            response = self.supabase.rpc("get_chat_history", {
+            response = await self.supabase.rpc("get_chat_history", {
                 "p_user_id": user_id,
                 "p_limit": limit
             }).execute()
@@ -297,7 +299,7 @@ class UserService:
                 "role": role,
                 "content": content
             }
-            self.supabase.table("chat_history").insert(data).execute()
+            await self.supabase.table("chat_history").insert(data).execute()
         except Exception as e:
             # Suppress Foreign Key violation error (happens if user deleted account or not started yet)
             if "violates foreign key constraint" in str(e):
@@ -311,7 +313,7 @@ class UserService:
         """
         try:
             # Удаляем все записи из chat_history для данного user_id
-            self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
+            await self.supabase.table("chat_history").delete().eq("user_id", user_id).execute()
         except Exception:
             logger.exception("Failed to clear chat history")
 
@@ -321,7 +323,7 @@ class UserService:
         """
         try:
             # 1. Получаем ID последних N сообщений
-            response = self.supabase.table("chat_history")\
+            response = await self.supabase.table("chat_history")\
                 .select("id")\
                 .eq("user_id", user_id)\
                 .order("created_at", desc=True)\
@@ -334,7 +336,7 @@ class UserService:
             ids_to_delete = [item['id'] for item in response.data]
             
             # 2. Удаляем их
-            self.supabase.table("chat_history")\
+            await self.supabase.table("chat_history")\
                 .delete()\
                 .in_("id", ids_to_delete)\
                 .execute()
@@ -397,7 +399,7 @@ class UserService:
         Story 23: Check if pending user reached free limit in organization.
         """
         try:
-            res = self.supabase.table('organization_members')\
+            res = await self.supabase.table('organization_members')\
                 .select('status, free_searches_used')\
                 .eq('user_id', user_id)\
                 .eq('org_id', org_id)\

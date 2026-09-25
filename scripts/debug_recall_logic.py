@@ -5,10 +5,11 @@ sys.path.append(os.getcwd())
 import asyncio
 import datetime
 from app.services.user_service import user_service
-from app.infrastructure.supabase.client import get_supabase
+from app.infrastructure.supabase.client import get_supabase, init_supabase
 from app.services.recall_service import recall_service
 
 async def debug_recall_process():
+    await init_supabase()
     user_id = 6108932752
     print(f"--- Debugging Recall for User {user_id} ---")
     
@@ -75,10 +76,10 @@ async def debug_recall_process():
         
         # Check raw contacts count
         supabase = get_supabase()
-        res = supabase.table("contacts").select("count", count="exact").eq("user_id", user_id).execute()
+        res = await supabase.table("contacts").select("count", count="exact").eq("user_id", user_id).execute()
         print(f"Total Raw Contacts in DB: {res.count}")
         
-        res_active = supabase.table("contacts").select("count", count="exact").eq("user_id", user_id).eq("is_archived", False).execute()
+        res_active = await supabase.table("contacts").select("count", count="exact").eq("user_id", user_id).eq("is_archived", False).execute()
         print(f"Active Contacts in DB: {res_active.count}")
     else:
         print("PASS: Contacts exist")

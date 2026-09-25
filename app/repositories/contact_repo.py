@@ -12,7 +12,7 @@ class ContactRepository:
         if org_id:
             # 1. Проверяем, реально ли юзер состоит в этой организации
             # Таблица называется organization_members, поля user_id и org_id
-            response = self.db.table('organization_members')\
+            response = await self.db.table('organization_members')\
                 .select('user_id, status')\
                 .eq('user_id', user_id)\
                 .eq('org_id', org_id)\
@@ -37,20 +37,20 @@ class ContactRepository:
         contact_data['org_id'] = org_id
         contact_data['user_id'] = user_id 
         
-        return self.db.table('contacts').insert(contact_data).execute()
+        return await self.db.table('contacts').insert(contact_data).execute()
 
     async def search(self, user_id: int, query: str):
         """
         Hybrid search (Story 15)
         """
-        return self.db.rpc('search_hybrid', {'p_user_id': user_id, 'p_query': query}).execute()
+        return await self.db.rpc('search_hybrid', {'p_user_id': user_id, 'p_query': query}).execute()
 
     async def increment_free_searches(self, user_id: int, org_id: str) -> int:
         """
         Story 23: Increment free searches counter for pending members.
         """
         try:
-            res = self.db.table('organization_members')\
+            res = await self.db.table('organization_members')\
                 .select('free_searches_used, status')\
                 .eq('user_id', user_id)\
                 .eq('org_id', org_id)\
@@ -68,7 +68,7 @@ class ContactRepository:
             
             logger.debug(f"[LIMIT] Incrementing searches for user {user_id} in org {org_id}: {member.get('free_searches_used')} -> {new_count}")
             
-            self.db.table('organization_members')\
+            await self.db.table('organization_members')\
                 .update({'free_searches_used': new_count})\
                 .eq('user_id', user_id)\
                 .eq('org_id', org_id)\

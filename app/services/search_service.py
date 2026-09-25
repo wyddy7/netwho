@@ -12,10 +12,19 @@ class AccessDenied(Exception):
     pass
 
 class SearchService:
-    def __init__(self):
-        self.supabase = get_supabase()
-        self.repo = ContactRepository(self.supabase)
-        self.org_repo = OrgRepository(self.supabase)
+    # Resolved per call: the shared async client is created in async startup,
+    # after this module-level singleton is constructed.
+    @property
+    def supabase(self):
+        return get_supabase()
+
+    @property
+    def repo(self) -> ContactRepository:
+        return ContactRepository(self.supabase)
+
+    @property
+    def org_repo(self) -> OrgRepository:
+        return OrgRepository(self.supabase)
 
     async def create_contact(self, contact_data: ContactCreate) -> ContactInDB:
         try:
@@ -52,7 +61,7 @@ class SearchService:
         try:
             # 1. Запрос ТОЛЬКО по ID (без фильтра по user_id для избежания RLS конфликтов)
             contact_id_str = str(contact_id)
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .select("*")\
                 .eq("id", contact_id_str)\
                 .execute()
@@ -73,7 +82,7 @@ class SearchService:
             # 4.1. Check Organization Access if applicable
             if contact.org_id:
                 # If contact belongs to org, check if user is an APPROVED member
-                res = self.supabase.table('organization_members')\
+                res = await self.supabase.table('organization_members')\
                     .select('status')\
                     .eq('user_id', user_id)\
                     .eq('org_id', str(contact.org_id))\
@@ -113,7 +122,7 @@ class SearchService:
             )
         
         try:
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .update(updates)\
                 .eq("id", str(contact_id))\
                 .eq("user_id", user_id)\
@@ -142,7 +151,7 @@ class SearchService:
             )
         
         try:
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .delete()\
                 .eq("id", str(contact_id))\
                 .eq("user_id", user_id)\
@@ -162,7 +171,7 @@ class SearchService:
     
     async def count_contacts(self, user_id: int) -> int:
         try:
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .select("*", count="exact", head=True)\
                 .eq("user_id", user_id)\
                 .execute()
@@ -177,7 +186,7 @@ class SearchService:
         """
         try:
             # Простой поиск по подстроке case-insensitive
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .select("*")\
                 .eq("user_id", user_id)\
                 .ilike("name", f"%{name}%")\
@@ -197,7 +206,7 @@ class SearchService:
         """
         try:
             logger.debug(f"[get_recent_contacts] user_id={user_id}, limit={limit}")
-            response = self.supabase.table("contacts")\
+            response = await self.supabase.table("contacts")\
                 .select("id, name, summary, meta, org_id, organizations(name)")\
                 .eq("user_id", user_id)\
                 .eq("is_archived", False)\
@@ -273,7 +282,7 @@ class SearchService:
                 # However, the direct select below bypasses our search_hybrid SQL function's security.
                 # Let's make it respect the membership status.
                 
-                response = self.supabase.table("contacts")\
+                response = await self.supabase.table("contacts")\
                     .select("id, name, summary, meta, org_id, organizations(name)")\
                     .eq("org_id", str(org_id))\
                     .eq("is_archived", False)\
@@ -326,7 +335,7 @@ class SearchService:
                     matched_org_ids = [str(org['id']) for org in user_orgs if q_lower in org['name'].lower()]
                     
                     if matched_org_ids:
-                        org_response = self.supabase.table("contacts")\
+                        org_response = await self.supabase.table("contacts")\
                             .select("id, name, summary, meta, org_id, organizations(name)")\
                             .in_("org_id", matched_org_ids)\
                             .eq("is_archived", False)\
@@ -357,7 +366,7 @@ class SearchService:
                         "match_count": limit
                     }
                     
-                    vec_response = self.supabase.rpc("match_contacts", params).execute()
+                    vec_response = await self.supabase.rpc("match_contacts", params).execute()
                     if vec_response.data:
                         vector_results = [SearchResult(**item) for item in vec_response.data]
                         # Если есть org_id, фильтруем

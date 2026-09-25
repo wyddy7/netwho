@@ -11,10 +11,13 @@ os.environ.setdefault("SUPABASE_URL", "https://example.supabase.co")
 os.environ.setdefault("SUPABASE_KEY", "test-key")
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
+import app.infrastructure.supabase.client as supabase_client  # noqa: E402
+import app.scheduler as scheduler_module  # noqa: E402
 from app.scheduler import (  # noqa: E402
     RECALL_CRON_MINUTE,
     RECALL_MISFIRE_GRACE_SECONDS,
     configure_recall_scheduler,
+    run_recall_job,
 )
 from app.services.recall_service import recall_service  # noqa: E402
 from app.services.user_service import user_service  # noqa: E402
@@ -28,7 +31,7 @@ class _Query:
     def select(self, _fields):
         return self
 
-    def execute(self):
+    async def execute(self):
         self.execute_calls += 1
         return SimpleNamespace(data=self.rows)
 
@@ -56,7 +59,7 @@ def test_recall_scan_uses_loaded_subscription_fields_without_per_user_queries(mo
         for user_id in range(1, 11)
     ]
     supabase = _Supabase(rows)
-    monkeypatch.setattr(recall_service, "supabase", supabase)
+    monkeypatch.setattr(supabase_client, "_client", supabase)
 
     async def unexpected_get_user(_user_id):
         raise AssertionError("recall scan must not call get_user for a loaded row")
@@ -107,6 +110,7 @@ def test_recall_job_has_bounded_cadence_and_misfire_policy():
     bot = object()
     configure_recall_scheduler(scheduler, bot)
 
+    assert scheduler.args[0] is run_recall_job
     assert scheduler.args[1] == "cron"
     assert scheduler.kwargs == {
         "id": "active_recall",
@@ -117,3 +121,34 @@ def test_recall_job_has_bounded_cadence_and_misfire_policy():
         "misfire_grace_time": RECALL_MISFIRE_GRACE_SECONDS,
         "replace_existing": True,
     }
+
+
+def test_recall_job_run_is_cancelled_by_timeout(monkeypatch):
+    """A hung run is cut off by wait_for instead of holding the job slot."""
+    cancelled = []
+
+    async def hung_process_recalls(_bot):
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    monkeypatch.setattr(recall_service, "process_recalls", hung_process_recalls)
+    monkeypatch.setattr(scheduler_module, "RECALL_JOB_TIMEOUT_SECONDS", 0.05)
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        await run_recall_job(bot=object())  # timeout is logged, not raised
+        return loop.time() - started
+
+    elapsed = asyncio.run(run())
+
+    assert cancelled == [True]
+    assert elapsed < 1
+
+
+def test_recall_job_timeout_is_well_under_the_cron_interval():
+    interval_seconds = int(RECALL_CRON_MINUTE.removeprefix("*/")) * 60
+    assert scheduler_module.RECALL_JOB_TIMEOUT_SECONDS <= interval_seconds * 0.75

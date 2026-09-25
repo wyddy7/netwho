@@ -5,10 +5,11 @@ import os
 # Добавляем корень проекта в путь
 sys.path.append(os.getcwd())
 
-from app.infrastructure.supabase.client import get_supabase
+from app.infrastructure.supabase.client import get_supabase, init_supabase
 from loguru import logger
 
 async def check_connection():
+    await init_supabase()
     logger.info("Checking Supabase connection...")
     try:
         client = get_supabase()
@@ -17,7 +18,7 @@ async def check_connection():
         # но мы можем попробовать обратиться к таблице users.
         # Даже если она пустая, запрос должен пройти (вернет пустой список), если соединение есть.
         
-        response = client.table("users").select("*", count="exact").limit(1).execute()
+        response = await client.table("users").select("*", count="exact").limit(1).execute()
         
         logger.success(f"Connection successful! Users count: {response.count}")
         return True

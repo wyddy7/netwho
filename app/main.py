@@ -12,21 +12,13 @@ from app.config import settings
 from app.handlers import base, voice, text, settings as settings_handler, profile, onboarding
 from app.services.user_service import user_service
 from app.scheduler import configure_recall_scheduler
-from app.infrastructure.supabase.client import get_supabase
+from app.infrastructure.supabase.client import init_supabase, close_supabase
 
 # Твой ID для уведомлений (можно вынести в .env, но пока так)
 ADMIN_ID = 6108932752
 
 async def on_startup(bot: Bot):
     logger.info("Bot started! Polling...")
-    
-    # Инициализируем Supabase клиент при старте (чтобы сразу видеть в логах, какой ключ используется)
-    try:
-        supabase_client = get_supabase()
-        logger.info("Supabase client initialized successfully")
-    except Exception:
-        logger.exception("Failed to initialize Supabase client")
-        raise
     
     try:
         # Уведомляем админа
@@ -44,6 +36,11 @@ async def on_startup(bot: Bot):
 
 async def main():
     logger.info("Starting NetWho Bot...")
+    
+    # One shared async Supabase client, created before anything can use it
+    # (startup hook, handlers, scheduler). Raises -> the bot does not start.
+    await init_supabase()
+    logger.info("Supabase client initialized successfully")
     
     _proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("PROXY_URL")
     _session = AiohttpSession(proxy=_proxy) if _proxy else None
@@ -98,7 +95,9 @@ async def main():
     except Exception:
         logger.exception("Bot stopped with error")
     finally:
+        scheduler.shutdown(wait=False)
         await bot.session.close()
+        await close_supabase()
 
 if __name__ == "__main__":
     try:

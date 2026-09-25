@@ -228,7 +228,7 @@ async def cmd_debug_user(message: types.Message):
         target_id = int(args[1])
         
         # Direct raw select
-        response = user_service.supabase.table("users").select("*").eq("id", target_id).execute()
+        response = await user_service.supabase.table("users").select("*").eq("id", target_id).execute()
         
         if not response.data:
             await message.reply("❌ User not found in DB.")

@@ -3,10 +3,12 @@ import os
 sys.path.append(os.getcwd())
 
 import asyncio
+from app.infrastructure.supabase.client import init_supabase
 from app.services.user_service import user_service
 from app.schemas import RecallSettings
 
 async def fix_user_settings():
+    await init_supabase()
     user_id = 6108932752
     user = await user_service.get_user(user_id)
     if user:
