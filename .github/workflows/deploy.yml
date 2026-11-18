@@ -127,11 +127,6 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@4e4c49acaa9818630ce0bd7a564372c17e33fb4d  # v2
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-
       - name: Execute remote ssh commands using key
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2  # v1.2.5
         with:
