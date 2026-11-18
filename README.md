@@ -8,7 +8,7 @@
 *   **Aiogram 3.x** (Telegram Bot API)
 *   **Supabase** (PostgreSQL + Auth)
 *   **OpenRouter / OpenAI** (LLM inference)
-*   **Groq** (Voice transcription)
+*   **Gemini via OpenRouter** (Voice transcription, same key as the LLM)
 *   **APScheduler** (Background tasks)
 *   **uv** (Package manager)
 
@@ -65,7 +65,7 @@
 | `OPENROUTER_API_KEY` | ✅ | Ключ OpenRouter (или OpenAI) |
 | `ADMIN_ID` | ✅ | Telegram ID владельца (для админ-команд) |
 | `LOG_LEVEL` | ❌ | Уровень логирования: `DEBUG`, `INFO`, `WARNING`, `ERROR` (дефолт: `INFO`) |
-| `GROQ_API_KEY` | ❌ | Для распознавания ГС (если не задан — войсы игнорируются) |
+| `STT_MODEL` / `STT_FALLBACK_MODEL` | ❌ | Модели распознавания ГС на OpenRouter (по умолчанию `google/gemini-3.5-flash-lite` / `google/gemini-3.1-flash-lite`) |
 | `LLM_MODEL` | ❌ | Дефолт: `openai/gpt-4o-mini` |
 | `PROXY_URL` | ❌ | Proxy for the LLM client; may contain credentials and is never logged |
 | `HTTPS_PROXY` / `HTTP_PROXY` | ❌ | Proxy fallback used by the Telegram session |

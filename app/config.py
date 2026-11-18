@@ -31,8 +31,10 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "openai/gpt-4o-mini"  # Основная модель
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 
-    # Voice (Groq)
-    GROQ_API_KEY: str | None = None
+    # Voice: Gemini via OpenRouter (same key as the LLM). Ids checked in the
+    # live /models catalog and probed on a Russian ogg/opus voice 2026-11-18.
+    STT_MODEL: str = "google/gemini-3.5-flash-lite"
+    STT_FALLBACK_MODEL: str = "google/gemini-3.1-flash-lite"
 
     # Proxy
     PROXY_URL: str | None = None
