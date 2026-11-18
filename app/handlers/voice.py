@@ -44,7 +44,7 @@ async def handle_voice(message: types.Message):
         file_info = await bot.get_file(message.voice.file_id)
         await bot.download_file(file_info.file_path, ogg_path)
         
-        # 2. Транскрибация (STT): Groq Whisper принимает ogg/opus напрямую
+        # 2. Транскрибация (STT): Gemini через OpenRouter принимает ogg/opus напрямую
         transcribed_text = await ai_service.transcribe_audio(ogg_path)
         
         if not transcribed_text:

@@ -1,4 +1,4 @@
-"""Voice messages go to Groq Whisper as the downloaded .ogg — no conversion."""
+"""Voice messages go to Gemini on OpenRouter as the downloaded .ogg, no conversion."""
 import asyncio
 import os
 from types import SimpleNamespace
@@ -102,7 +102,7 @@ def test_temp_ogg_cleaned_up_when_transcription_fails(monkeypatch, tmp_path):
 
     async def boom(file_path):
         seen.append(file_path)
-        raise RuntimeError("groq down")
+        raise RuntimeError("stt down")
 
     monkeypatch.setattr(ai_service, "transcribe_audio", boom)
 
@@ -110,26 +110,59 @@ def test_temp_ogg_cleaned_up_when_transcription_fails(monkeypatch, tmp_path):
     assert seen and not os.path.exists(seen[0])
 
 
-def test_transcribe_audio_uploads_ogg_file_to_groq(monkeypatch, tmp_path):
-    """The real Groq SDK uploads the .ogg as-is: filename, bytes and model."""
-    ogg = tmp_path / "voice_42_7.ogg"
-    ogg.write_bytes(OGG_BYTES)
+def _mock_llm(monkeypatch, replies):
+    """Point the shared OpenAI client at a mock transport; replies are popped per request."""
+    from openai import AsyncOpenAI
     requests = []
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(200, json={"text": "привет"})
+        status, content = replies.pop(0)
+        if status != 200:
+            return httpx.Response(status, json={"error": {"message": "boom"}})
+        return httpx.Response(200, json={
+            "id": "x", "object": "chat.completion", "created": 0, "model": "m",
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": content}}],
+        })
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(ai_service, "http_client", client)
-    monkeypatch.setattr(settings, "GROQ_API_KEY", "test-key")
+    client = AsyncOpenAI(api_key="test-key", base_url="https://openrouter.test/api/v1", max_retries=0,
+                         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(ai_service, "llm_client", client)
+    return requests
+
+
+def test_transcribe_audio_sends_ogg_as_input_audio(monkeypatch, tmp_path):
+    """The .ogg goes base64 in an input_audio part, format ogg, to STT_MODEL."""
+    import base64
+    import json
+    ogg = tmp_path / "voice_42_7.ogg"
+    ogg.write_bytes(OGG_BYTES)
+    requests = _mock_llm(monkeypatch, [(200, " привет ")])
 
     assert asyncio.run(ai_service.transcribe_audio(str(ogg))) == "привет"
 
     assert len(requests) == 1
-    request = requests[0]
-    assert request.url.path.endswith("/audio/transcriptions")
-    body = request.content
-    assert b'filename="voice_42_7.ogg"' in body
-    assert OGG_BYTES in body
-    assert b"whisper-large-v3" in body
+    assert requests[0].url.path.endswith("/chat/completions")
+    body = json.loads(requests[0].content)
+    assert body["model"] == settings.STT_MODEL
+    audio = [p for p in body["messages"][0]["content"] if p["type"] == "input_audio"][0]["input_audio"]
+    assert audio["format"] == "ogg"
+    assert base64.b64decode(audio["data"]) == OGG_BYTES
+
+
+def test_transcribe_audio_falls_back_on_error_and_on_empty(monkeypatch, tmp_path):
+    import json
+    ogg = tmp_path / "v.ogg"
+    ogg.write_bytes(OGG_BYTES)
+
+    requests = _mock_llm(monkeypatch, [(500, None), (200, "запасная")])
+    assert asyncio.run(ai_service.transcribe_audio(str(ogg))) == "запасная"
+    assert [json.loads(r.content)["model"] for r in requests] == [settings.STT_MODEL, settings.STT_FALLBACK_MODEL]
+
+    _mock_llm(monkeypatch, [(200, ""), (200, "  ")])
+    assert asyncio.run(ai_service.transcribe_audio(str(ogg))) == ""
+
+
+def test_transcribe_audio_missing_file_returns_empty(tmp_path):
+    assert asyncio.run(ai_service.transcribe_audio(str(tmp_path / "nope.ogg"))) == ""
